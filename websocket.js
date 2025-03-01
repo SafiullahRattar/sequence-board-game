@@ -30,6 +30,9 @@ class GameWebSocket {
       switch (data.type) {
         case 'created':
           this.gameId = data.gameId;
+          if (data.gameState) {
+            data.gameState.gameId = data.gameId;  // Ensure gameId is in the state
+          }
           if (this.onGameState) this.onGameState(data.gameState);
           break;
         case 'gameState':
