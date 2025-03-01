@@ -486,15 +486,15 @@
         
         // Board layout (card positions, F = free corner, X = not used)
 const boardLayout = [
-    ['F', '6♠', '7♠', '8♠', '9♠', '10♠', 'Q♠', 'K♠', 'A♠', 'F'],
-    ['5♠', '3♥', '2♥', '2♦', '3♦', '4♦', '5♦', '6♦', '7♦', 'A♣'],
-    ['4♠', '4♥', 'K♣', 'A♣', 'A♦', 'K♦', 'Q♦', '10♦', '8♦', 'K♣'],
-    ['3♠', '5♥', 'Q♣', 'Q♥', '10♥', '9♥', '8♥', '9♦', '9♣', 'Q♣'],
-    ['2♠', '6♥', '10♣', 'K♥', '3♥', '2♥', '7♥', '8♣', '10♣', '10♠'],
-    ['A♠', '7♥', '9♣', 'A♥', '4♥', '5♥', '6♥', '7♣', '6♠', '9♠'],
-    ['K♠', '8♥', '8♣', '2♣', '3♣', '4♣', '5♣', '6♣', '5♠', '8♠'],
-    ['Q♠', '9♥', '7♣', '6♣', '5♣', '4♣', '3♣', '2♣', '4♠', '7♠'],
-    ['10♠', 'Q♥', '10♥', '9♥', '8♥', '7♥', '6♥', '5♥', '3♠', '6♠'],
+    ['F', '6♣', '7♣', '8♣', '9♣', '10♣', 'Q♣', 'K♣', 'A♣', 'F'],
+    ['5♣', '3♥', '2♥', '2♠', '3♠', '4♠', '5♠', '6♠', '7♠', 'A♠'],
+    ['4♣', '4♥', 'K♦', 'A♦', 'A♣', 'K♣', 'Q♣', '10♣', '8♠', 'K♠'],
+    ['3♣', '5♥', 'Q♦', 'Q♥', '10♥', '9♥', '8♥', '9♠', '9♣', 'Q♠'],
+    ['2♣', '6♥', '10♦', 'K♥', '3♥', '2♥', '7♥', '8♣', '10♠', '10♠'],
+    ['A♣', '7♥', '9♦', 'A♥', '4♥', '5♥', '6♥', '7♣', '6♠', '9♠'],
+    ['K♣', '8♥', '8♦', '2♦', '3♦', '4♦', '5♦', '6♣', '5♠', '8♠'],
+    ['Q♣', '9♥', '7♦', '6♦', '5♦', '4♦', '3♦', '2♣', '4♠', '7♠'],
+    ['10♣', 'Q♥', '10♥', '9♥', '8♥', '7♥', '6♥', '5♥', '3♠', '6♠'],
     ['F', 'A♥', 'K♥', 'Q♥', '10♥', '9♥', '8♥', '7♥', '2♠', 'F']
 ];
         
@@ -1097,61 +1097,69 @@ function playCard(cardIndex) {
         }
         
         // Highlight available moves for the selected card
-        function highlightAvailableMoves(selectedCard) {
-            // Clear any existing highlights
-            const cells = document.querySelectorAll('.cell');
-            cells.forEach(cell => {
-                cell.classList.remove('highlight-available');
-            });
+function highlightAvailableMoves(selectedCard) {
+    // Clear any existing highlights
+    const cells = document.querySelectorAll('.cell');
+    cells.forEach(cell => {
+        cell.classList.remove('highlight-available');
+    });
+    
+    if (selectedCard === null) return;
+    
+    const playerIndex = gameState.isHost ? 0 : 1;
+    const cardValue = gameState.players[playerIndex].hand[selectedCard];
+    
+    // Handle special jacks differently
+    if (SPECIAL_JACKS[cardValue]) {
+        if (SPECIAL_JACKS[cardValue] === 'one-eyed') {
+            // One-eyed jack: highlight opponent tokens not in sequences
+            const opponentIndex = playerIndex === 0 ? 1 : 0;
+            const opponentColor = gameState.players[opponentIndex].color;
             
-            if (selectedCard === null) return;
-            
-            const playerIndex = gameState.isHost ? 0 : 1;
-            const cardValue = gameState.players[playerIndex].hand[selectedCard];
-            
-            // Handle special jacks differently
-            if (SPECIAL_JACKS[cardValue]) {
-                if (SPECIAL_JACKS[cardValue] === 'one-eyed') {
-                    // One-eyed jack: highlight opponent tokens not in sequences
-                    const opponentIndex = playerIndex === 0 ? 1 : 0;
-                    const opponentColor = gameState.players[opponentIndex].color;
-                    
-                    for (let row = 0; row < 10; row++) {
-                        for (let col = 0; col < 10; col++) {
-                            if (gameState.board[row][col].token === opponentColor) {
-                                if (!isTokenInSequence(row, col)) {
-                                    const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
-                                    if (cellElement) cellElement.classList.add('highlight-available');
-                                }
-                            }
-                        }
-                    }
-                } else if (SPECIAL_JACKS[cardValue] === 'two-eyed') {
-                    // Two-eyed jack: highlight all empty spaces
-                    for (let row = 0; row < 10; row++) {
-                        for (let col = 0; col < 10; col++) {
-                            if (gameState.board[row][col].type === 'card' && 
-                                gameState.board[row][col].token === null) {
-                                const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
-                                if (cellElement) cellElement.classList.add('highlight-available');
-                            }
-                        }
+            for (let row = 0; row < 10; row++) {
+                for (let col = 0; col < 10; col++) {
+                    const cell = gameState.board[row][col];
+                    if (cell && cell.token === opponentColor && !isTokenInSequence(row, col)) {
+                        const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+                        if (cellElement) cellElement.classList.add('highlight-available');
                     }
                 }
-            } else {
-                // Regular card: highlight matching card spaces
-                for (let row = 0; row < 10; row++) {
-                    for (let col = 0; col < 10; col++) {
-                        if (gameState.board[row][col].type === 'card' && 
-                            gameState.board[row][col].code === cardValue && 
-                            gameState.board[row][col].token === null) {
-                            const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
-                            if (cellElement) cellElement.classList.add('highlight-available');
-                        }
+            }
+        } else if (SPECIAL_JACKS[cardValue] === 'two-eyed') {
+            // Two-eyed jack: highlight all empty spaces that aren't free corners
+            for (let row = 0; row < 10; row++) {
+                for (let col = 0; col < 10; col++) {
+                    const cell = gameState.board[row][col];
+                    if (cell && cell.type === 'card' && cell.token === null) {
+                        const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+                        if (cellElement) cellElement.classList.add('highlight-available');
                     }
                 }
             }
         }
+    } else {
+        // Regular card: highlight ALL matching card spaces
+        let matchFound = false;
+        
+        for (let row = 0; row < 10; row++) {
+            for (let col = 0; col < 10; col++) {
+                const cell = gameState.board[row][col];
+                if (cell && cell.type === 'card' && cell.code === cardValue && cell.token === null) {
+                    const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+                    if (cellElement) {
+                        cellElement.classList.add('highlight-available');
+                        matchFound = true;
+                    }
+                }
+            }
+        }
+        
+        // If no matching spaces were found, notify the player
+        if (!matchFound) {
+            showNotification("No available spaces for this card");
+        }
+    }
+}
 
         // Update the game board UI
         function updateGameBoard() {
