@@ -6,6 +6,11 @@ class GameWebSocket {
     this.gameId = null;
   }
 
+  onGameCreated(message) {
+    // Default implementation that will be overridden
+    console.log("Game created with ID:", message.gameId);
+  }
+
   connect() {
     // Determine WebSocket URL (use secure connection if on HTTPS)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

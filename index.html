@@ -608,11 +608,13 @@ function createNewGame() {
     const username = document.getElementById('username').value || 'Player 1';
     const sequencesToWin = parseInt(document.getElementById('sequences').value);
     const firstPlayer = document.getElementById('firstPlayer').value === 'host' ? 0 : 1;
-    gameWebSocket = new GameWebSocket();
-    gameWebSocket.connect();
-
-    // Initialize websocket
     
+    // Initialize websocket if not already created
+    if (!gameWebSocket) {
+        gameWebSocket = new GameWebSocket();
+        gameWebSocket.connect();
+    }
+
     // Prepare game state
     const newGameState = {
         board: initializeBoard(),
@@ -638,6 +640,26 @@ function createNewGame() {
     newGameState.players[0].hand = playerHand;
     
     // Set up WebSocket callbacks
+    gameWebSocket.onGameCreated = (response) => {
+        console.log("Game creation response:", response);
+        
+        // Set game ID in state
+        newGameState.gameId = response.gameId;
+        gameState = newGameState;
+        
+        // Generate and display game link
+        const baseUrl = window.location.origin + window.location.pathname;
+        const gameUrl = `${baseUrl}?game=${response.gameId}`;
+        
+        gameLink.value = gameUrl;
+        gameCode.textContent = response.gameId;
+        linkBox.style.display = 'block';
+        
+        // Enable buttons again
+        createGameButton.disabled = false;
+        createGameButton.textContent = 'Create Game';
+    };
+    
     gameWebSocket.onGameState = (state) => {
         console.log("Game state received:", state);
         updateGameFromServer(state);
@@ -656,11 +678,11 @@ function createNewGame() {
     createGameButton.textContent = 'Creating game...';
     
     // Only create the game in WebSocket after connection is ready
-  gameWebSocket.whenConnected(() => {
+    gameWebSocket.whenConnected(() => {
         gameWebSocket.createGame(newGameState);
     });
     
-    // Don't switch to game screen yet - wait for server confirmation
+    // Store the initial game state
     gameState = newGameState;
 }
         
