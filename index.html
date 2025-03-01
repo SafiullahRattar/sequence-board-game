@@ -791,6 +791,9 @@ function updateGameFromServer(newGameState) {
         }
     }
     
+    // Check for winner after receiving an update
+    checkForWinner();
+    
     // Update UI components
     updateGameBoard();
     updatePlayerInfo();
@@ -857,36 +860,42 @@ function updateGameFromServer(newGameState) {
         }
         
         // Handle board click
-        function handleBoardClick(e) {
-            const cell = e.target.closest('.cell');
-            if (!cell) return;
-            
-            // Check if it's the player's turn
-            const playerIndex = gameState.isHost ? 0 : 1;
-            if (gameState.currentPlayer !== playerIndex) {
-                showNotification("It's not your turn");
-                return;
-            }
-            
-            const row = parseInt(cell.dataset.row);
-            const col = parseInt(cell.dataset.col);
-            
-            // Check if a card is selected
-            if (gameState.selectedCard === null) {
-                showNotification('Select a card from your hand first');
-                return;
-            }
-            
-            const selectedCard = gameState.players[playerIndex].hand[gameState.selectedCard];
-            
-            // Check if special Jack
-            if (SPECIAL_JACKS[selectedCard]) {
-                handleJackPlacement(row, col, selectedCard);
-            } else {
-                // Regular card placement
-                handleRegularPlacement(row, col, selectedCard);
-            }
-        }
+function handleBoardClick(e) {
+    // Don't allow moves if the game is over
+    if (gameState.gameOver) {
+        showNotification('Game is over!');
+        return;
+    }
+    
+    const cell = e.target.closest('.cell');
+    if (!cell) return;
+    
+    // Check if it's the player's turn
+    const playerIndex = gameState.isHost ? 0 : 1;
+    if (gameState.currentPlayer !== playerIndex) {
+        showNotification("It's not your turn");
+        return;
+    }
+    
+    const row = parseInt(cell.dataset.row);
+    const col = parseInt(cell.dataset.col);
+    
+    // Check if a card is selected
+    if (gameState.selectedCard === null) {
+        showNotification('Select a card from your hand first');
+        return;
+    }
+    
+    const selectedCard = gameState.players[playerIndex].hand[gameState.selectedCard];
+    
+    // Check if special Jack
+    if (SPECIAL_JACKS[selectedCard]) {
+        handleJackPlacement(row, col, selectedCard);
+    } else {
+        // Regular card placement
+        handleRegularPlacement(row, col, selectedCard);
+    }
+}
         
         // Handle jack placement
 function handleJackPlacement(row, col, selectedCard) {
@@ -998,16 +1007,11 @@ function playCard(cardIndex) {
         
         // Check if a token is part of a sequence
 function isTokenInSequence(row, col) {
-    // More explicit check through all sequences
-    for (const sequence of gameState.sequences) {
-        if (sequence.positions.some(pos => 
-            pos.row === row && 
-            pos.col === col
-        )) {
-            return true;
-        }
-    }
-    return false;
+    if (!gameState.sequences) return false;
+    
+    return gameState.sequences.some(sequence => 
+        sequence.positions.some(pos => pos.row === row && pos.col === col)
+    );
 }
         
         // Check for sequences
@@ -1054,7 +1058,7 @@ function checkForSequences() {
     }
     
     // Add new sequences and update player's sequence count
- if (newSequences.length > 0) {
+    if (newSequences.length > 0) {
         // Add new sequences to gameState
         gameState.sequences = [...gameState.sequences, ...newSequences];
         gameState.players[playerIndex].sequences += newSequences.length;
@@ -1062,13 +1066,24 @@ function checkForSequences() {
         // Mark each cell in the sequence as part of a sequence
         newSequences.forEach(sequence => {
             sequence.positions.forEach(pos => {
-                gameState.board[pos.row][pos.col].inSequence = true;
+                if (!gameState.board[pos.row][pos.col].inSequence) {
+                    gameState.board[pos.row][pos.col].inSequence = true;
+                }
             });
         });
         
+        // Update UI and check for winner
         updateGameBoard();
+        updatePlayerInfo();
+        
+        // Check if this player has won
+        if (checkForWinner()) {
+            // Game over, no need for further actions
+            return;
+        }
     }
 }
+
         
         // Check for a sequence from a starting position
 function checkSequence(startRow, startCol, deltaRow, deltaCol, playerColor) {
@@ -1205,44 +1220,43 @@ function highlightAvailableMoves(selectedCard) {
 }
 
         // Update the game board UI
-        function updateGameBoard() {
-            // Clear all tokens
-            const cells = document.querySelectorAll('.cell');
-            cells.forEach(cell => {
-                const tokenElements = cell.querySelectorAll('.token');
-                tokenElements.forEach(token => token.remove());
-                
-                const sequenceElements = cell.querySelectorAll('.sequence');
-                sequenceElements.forEach(seq => seq.remove());
-            });
+function updateGameBoard() {
+    // Clear all tokens and sequence markers
+    const cells = document.querySelectorAll('.cell');
+    cells.forEach(cell => {
+        const tokenElements = cell.querySelectorAll('.token');
+        tokenElements.forEach(token => token.remove());
+        
+        const sequenceElements = cell.querySelectorAll('.sequence');
+        sequenceElements.forEach(seq => seq.remove());
+    });
+    
+    // Add tokens based on game state
+    for (let row = 0; row < 10; row++) {
+        for (let col = 0; col < 10; col++) {
+            const cellData = gameState.board[row][col];
+            if (!cellData) continue;
             
-            // Add tokens based on game state
-            for (let row = 0; row < 10; row++) {
-                for (let col = 0; col < 10; col++) {
-                    if (gameState.board[row][col].token) {
-                        const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
-                        if (cellElement) {
-                            const token = document.createElement('div');
-                            token.className = `token ${gameState.board[row][col].token}`;
-                            cellElement.appendChild(token);
-                        }
-                    }
-                }
+            const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+            if (!cellElement) continue;
+            
+            // Add token if exists
+            if (cellData.token) {
+                const token = document.createElement('div');
+                token.className = `token ${cellData.token}`;
+                cellElement.appendChild(token);
             }
             
-            // Mark sequences
-            gameState.sequences.forEach(sequence => {
-                sequence.positions.forEach(position => {
-                    const cellElement = document.querySelector(`.cell[data-row="${position.row}"][data-col="${position.col}"]`);
-                    if (cellElement && !cellElement.querySelector('.sequence')) {
-                        const sequenceMark = document.createElement('div');
-                        sequenceMark.className = 'sequence';
-                        sequenceMark.textContent = '★';
-                        cellElement.appendChild(sequenceMark);
-                    }
-                });
-            });
+            // Mark sequence positions regardless of who created them
+            if (cellData.inSequence || isTokenInSequence(row, col)) {
+                const sequenceMark = document.createElement('div');
+                sequenceMark.className = 'sequence';
+                sequenceMark.textContent = '★';
+                cellElement.appendChild(sequenceMark);
+            }
         }
+    }
+}
         
         // Update player info UI
 function updatePlayerInfo() {
@@ -1262,17 +1276,53 @@ function updatePlayerInfo() {
     player1Element.className = gameState.currentPlayer === 0 ? 'active' : '';
     player2Element.className = gameState.currentPlayer === 1 ? 'active' : '';
     
-    // Update sequence counter
-    sequenceCounter.textContent = `${gameState.players[playerIndex].sequences}/${gameState.sequencesToWin}`;
+    // Update sequence counter - FIXED: use the player's actual sequence count
+    const playerSequences = gameState.players[playerIndex].sequences || 0;
+    sequenceCounter.textContent = `${playerSequences}/${gameState.sequencesToWin}`;
     
     // Update selected card
-    if (gameState.selectedCard !== null) {
+    if (gameState.selectedCard !== null && gameState.players[playerIndex].hand) {
         selectedCardElement.textContent = gameState.players[playerIndex].hand[gameState.selectedCard];
     } else {
         selectedCardElement.textContent = 'None';
     }
 }
         
+function checkForWinner() {
+    for (let i = 0; i < gameState.players.length; i++) {
+        if (gameState.players[i].sequences >= gameState.sequencesToWin) {
+            // Display winner message
+            const winnerName = gameState.players[i].name;
+            showNotification(`${winnerName} wins the game!`);
+            
+            // Create a more prominent winner announcement
+            const winnerAnnouncement = document.createElement('div');
+            winnerAnnouncement.style.position = 'fixed';
+            winnerAnnouncement.style.top = '50%';
+            winnerAnnouncement.style.left = '50%';
+            winnerAnnouncement.style.transform = 'translate(-50%, -50%)';
+            winnerAnnouncement.style.padding = '20px 40px';
+            winnerAnnouncement.style.backgroundColor = 'rgba(0,0,0,0.8)';
+            winnerAnnouncement.style.color = 'white';
+            winnerAnnouncement.style.fontSize = '24px';
+            winnerAnnouncement.style.borderRadius = '10px';
+            winnerAnnouncement.style.zIndex = '1000';
+            winnerAnnouncement.textContent = `${winnerName} wins the game!`;
+            document.body.appendChild(winnerAnnouncement);
+            
+            // Disable further moves
+            gameState.gameOver = true;
+            
+            // Remove after 5 seconds
+            setTimeout(() => {
+                winnerAnnouncement.remove();
+            }, 5000);
+            
+            return true;
+        }
+    }
+    return false;
+}
         // Update player hand UI
 function updatePlayerHand() {
     const playerIndex = gameState.isHost ? 0 : 1;
