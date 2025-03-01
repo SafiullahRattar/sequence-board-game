@@ -591,47 +591,51 @@
         }
         
         // Create a new game
-        function createNewGame() {
-            const username = document.getElementById('username').value || 'Player 1';
-            const sequencesToWin = parseInt(document.getElementById('sequences').value);
-            const firstPlayer = document.getElementById('firstPlayer').value === 'host' ? 0 : 1;
-            
-            // Initialize websocket
-            const socket = new GameWebSocket();
-            socket.connect();
-            
-            // Set up game state
-            gameState = {
-                board: initializeBoard(),
-                deck: createAndShuffleDeck(),
-                players: [
-                    { name: username, hand: [], color: 'blue', sequences: 0 },
-                    { name: 'Player 2', hand: [], color: 'green', sequences: 0 }
-                ],
-                currentPlayer: firstPlayer,
-                sequencesToWin: sequencesToWin,
-                selectedCard: null,
-                sequences: [],
-                isHost: true
-            };
-            
-            // Deal cards to players
-            dealCards();
-            
-            // Set up WebSocket callbacks
-            socket.onGameState = updateGameFromServer;
-            socket.onPlayerJoined = handlePlayerJoin;
-            socket.onPlayerMove = updateGameFromServer;
-            socket.onPlayerDisconnected = handlePlayerDisconnect;
-            
-            // Send initial game state to server
-            socket.createGame(gameState);
-            
-            // Show link box
-            createGameButton.disabled = true;
-            createGameButton.textContent = 'Game Created';
-            linkBox.style.display = 'block';
-        }
+function createNewGame() {
+    const username = document.getElementById('username').value || 'Player 1';
+    const sequencesToWin = parseInt(document.getElementById('sequences').value);
+    const firstPlayer = document.getElementById('firstPlayer').value === 'host' ? 0 : 1;
+    
+    // Initialize websocket
+    const socket = new GameWebSocket();
+    socket.connect();
+    
+    // Set up game state
+    gameState = {
+        board: initializeBoard(),
+        deck: createAndShuffleDeck(),
+        players: [
+            { name: username, hand: [], color: 'blue', sequences: 0 },
+            { name: 'Player 2', hand: [], color: 'green', sequences: 0 }
+        ],
+        currentPlayer: firstPlayer,
+        sequencesToWin: sequencesToWin,
+        selectedCard: null,
+        sequences: [],
+        isHost: true
+    };
+    
+    // Deal cards to players
+    dealCards();
+    
+    // Set up WebSocket callbacks
+    socket.onGameState = (state) => {
+        console.log("Game state received:", state);
+        updateGameFromServer(state);
+    };
+    socket.onPlayerJoined = handlePlayerJoin;
+    socket.onPlayerMove = updateGameFromServer;
+    socket.onPlayerDisconnected = handlePlayerDisconnect;
+    
+    // Send initial game state to server
+    console.log("Attempting to create game...");
+    socket.createGame(gameState);
+    
+    // Show link box
+    createGameButton.disabled = true;
+    createGameButton.textContent = 'Game Created';
+    linkBox.style.display = 'block';
+}
         
         // Join an existing game
         function joinExistingGame() {
