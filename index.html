@@ -616,7 +616,7 @@ function createNewGame() {
         gameWebSocket.connect();
     }
 
-    // Prepare game state
+    // Prepare game state with properly initialized arrays and objects
     const newGameState = {
         board: initializeBoard(),
         deck: createAndShuffleDeck(),
@@ -627,36 +627,26 @@ function createNewGame() {
         currentPlayer: firstPlayer,
         sequencesToWin: sequencesToWin,
         selectedCard: null,
-        sequences: [],
+        sequences: [], // Explicitly initialize the sequences array
         isHost: true
     };
+    
+    // Special handling for dev mode
     if (username.toLowerCase() === 'dev') {
-    // Create a specific hand for testing sequence creation
-    const testHand = ['10♠', 'Q♠', 'K♠', 'A♠', '3♦', '4♦', '5♦'];
-    newGameState.players[0].hand = testHand;
-    
-    // Remove these cards from the deck to avoid duplicates
-    newGameState.deck = newGameState.deck.filter(card => !testHand.includes(card));
-    
-    console.log("Dev mode: Test hand created with sequence-making cards");
-} else {
-    // Regular card dealing for non-dev players
-    const playerHand = [];
-    for (let i = 0; i < 7; i++) {
-        if (newGameState.deck.length > 0) {
-            playerHand.push(newGameState.deck.pop());
+        const testHand = ['10♠', 'Q♠', 'K♠', 'A♠', '3♦', '4♦', '5♦'];
+        newGameState.players[0].hand = testHand;
+        newGameState.deck = newGameState.deck.filter(card => !testHand.includes(card));
+        console.log("Dev mode: Test hand created with sequence-making cards");
+    } else {
+        // Regular card dealing for non-dev players
+        const playerHand = [];
+        for (let i = 0; i < 7; i++) {
+            if (newGameState.deck.length > 0) {
+                playerHand.push(newGameState.deck.pop());
+            }
         }
+        newGameState.players[0].hand = playerHand;
     }
-    newGameState.players[0].hand = playerHand;
-}
-    // Deal cards only to host player initially
-    // const playerHand = [];
-    // for (let i = 0; i < 7; i++) {
-    //     if (newGameState.deck.length > 0) {
-    //         playerHand.push(newGameState.deck.pop());
-    //     }
-    // }
-    // newGameState.players[0].hand = playerHand;
     
     // Set up WebSocket callbacks
     gameWebSocket.onGameCreated = (response) => {
@@ -768,33 +758,48 @@ function handlePlayerJoin(updatedGameState) {
 function updateGameFromServer(newGameState) {
     console.log("Updating game from server state:", newGameState);
     
-    // Preserve the current client's perspective
+    // Preserve the client's perspective (host or guest)
     const wasHost = gameState.isHost !== undefined ? gameState.isHost : true;
     
-    // Copy the state, making sure we're getting a complete update
-    gameState = JSON.parse(JSON.stringify(newGameState));
+    // Make a deep copy of the new state
+    const updatedState = JSON.parse(JSON.stringify(newGameState));
     
-    // Always maintain the client perspective
-    gameState.isHost = wasHost;
+    // Always preserve the client perspective
+    updatedState.isHost = wasHost;
     
-    // Ensure sequences array exists
-    if (!gameState.sequences) gameState.sequences = [];
+    // Ensure the sequences array exists
+    if (!updatedState.sequences) {
+        updatedState.sequences = [];
+    }
     
-    // Mark all cells in sequences for highlighting
-    gameState.sequences.forEach(sequence => {
-        sequence.positions.forEach(pos => {
-            if (gameState.board[pos.row] && gameState.board[pos.row][pos.col]) {
-                gameState.board[pos.row][pos.col].inSequence = true;
+    // Make sure player sequence counts are preserved
+    if (updatedState.players && updatedState.players.length >= 2) {
+        // Initialize sequence counts if missing
+        if (typeof updatedState.players[0].sequences !== 'number') {
+            updatedState.players[0].sequences = 0;
+        }
+        if (typeof updatedState.players[1].sequences !== 'number') {
+            updatedState.players[1].sequences = 0;
+        }
+    }
+    
+    // Mark all cells that are part of sequences
+    for (const sequence of updatedState.sequences) {
+        for (const pos of sequence.positions) {
+            if (updatedState.board[pos.row] && updatedState.board[pos.row][pos.col]) {
+                updatedState.board[pos.row][pos.col].inSequence = true;
             }
-        });
-    });
+        }
+    }
+    
+    // Update the game state
+    gameState = updatedState;
     
     // Handle game ID and link display
     if (gameState.gameId && gameLink.value === '') {
         const baseUrl = window.location.origin + window.location.pathname;
         const gameUrl = `${baseUrl}?game=${gameState.gameId}`;
         
-        console.log("Generated game URL:", gameUrl);
         gameLink.value = gameUrl;
         gameCode.textContent = gameState.gameId;
         
@@ -803,13 +808,13 @@ function updateGameFromServer(newGameState) {
         }
     }
     
-    // Check for winner after receiving an update
-    checkForWinner();
-    
     // Update UI components
     updateGameBoard();
     updatePlayerInfo();
     updatePlayerHand();
+    
+    // Check for winner
+    checkForWinner();
     
     // Show game screen once both players have joined
     if (gameState.players[0].name && gameState.players[1].name && 
@@ -818,6 +823,11 @@ function updateGameFromServer(newGameState) {
         gameScreen.style.display = 'block';
         linkBox.style.display = 'none'; // Hide link box after player joins
     }
+    
+    // Debug logging
+    console.log("Updated game state:", gameState);
+    console.log(`Player 0 has ${gameState.players[0].sequences} sequences`);
+    console.log(`Player 1 has ${gameState.players[1].sequences} sequences`);
 }
 
         
@@ -1004,12 +1014,27 @@ function playCard(cardIndex) {
     // Switch to other player
     gameState.currentPlayer = gameState.currentPlayer === 0 ? 1 : 0;
     
+    // Ensure sequence information is preserved before sending
+    if (!gameState.sequences) gameState.sequences = [];
+    
+    // Make sure sequence counts are preserved
+    for (let i = 0; i < gameState.players.length; i++) {
+        if (typeof gameState.players[i].sequences !== 'number') {
+            gameState.players[i].sequences = 0;
+        }
+    }
+    
+    // Log the state before sending
+    console.log("About to send game state with sequences:", gameState.sequences);
+    console.log(`Player 0 has ${gameState.players[0].sequences} sequences`);
+    console.log(`Player 1 has ${gameState.players[1].sequences} sequences`);
+    
     // Update UI
     updateGameBoard();
     updatePlayerInfo();
     updatePlayerHand();
     
-    // Send updated state to server - USE THE GLOBAL WEBSOCKET
+    // Send updated state to server
     if (gameWebSocket) {
         gameWebSocket.sendMove(gameState);
     } else {
@@ -1019,11 +1044,15 @@ function playCard(cardIndex) {
         
         // Check if a token is part of a sequence
 function isTokenInSequence(row, col) {
-    if (!gameState.sequences || !gameState.sequences.length) return false;
+    if (!gameState.sequences || gameState.sequences.length === 0) {
+        return false;
+    }
     
-    return gameState.sequences.some(sequence => 
+    const isInSequence = gameState.sequences.some(sequence => 
         sequence.positions.some(pos => pos.row === row && pos.col === col)
     );
+    
+    return isInSequence;
 }
         
         // Check for sequences
@@ -1039,9 +1068,12 @@ function checkForSequences() {
         {dr: 1, dc: -1}, // diagonal down-left
     ];
     
-    // Initialize sequences array if it doesn't exist
-    if (!gameState.sequences) gameState.sequences = [];
+    // Make sure sequences array exists
+    if (!gameState.sequences) {
+        gameState.sequences = [];
+    }
     
+    // Find new sequences
     const newSequences = [];
     
     // Check every possible starting position
@@ -1080,14 +1112,16 @@ function checkForSequences() {
         // Increment player's sequence count
         gameState.players[playerIndex].sequences += newSequences.length;
         
-        // Mark each cell in all sequences as part of a sequence
-        gameState.sequences.forEach(sequence => {
-            sequence.positions.forEach(pos => {
-                if (gameState.board[pos.row][pos.col]) {
+        console.log(`Player ${playerIndex} now has ${gameState.players[playerIndex].sequences} sequences`);
+        
+        // Mark each cell in the sequence as part of a sequence
+        for (const sequence of newSequences) {
+            for (const pos of sequence.positions) {
+                if (gameState.board[pos.row] && gameState.board[pos.row][pos.col]) {
                     gameState.board[pos.row][pos.col].inSequence = true;
                 }
-            });
-        });
+            }
+        }
         
         // Update UI and check for winner
         updateGameBoard();
@@ -1243,12 +1277,17 @@ function updateGameBoard() {
         sequenceElements.forEach(seq => seq.remove());
     });
     
-    // Add tokens based on game state
+    // Make sure the sequences array exists
+    if (!gameState.sequences) {
+        gameState.sequences = [];
+    }
+    
+    // Add tokens and sequence markers based on game state
     for (let row = 0; row < 10; row++) {
         for (let col = 0; col < 10; col++) {
-            const cellData = gameState.board[row][col];
-            if (!cellData) continue;
+            if (!gameState.board[row] || !gameState.board[row][col]) continue;
             
+            const cellData = gameState.board[row][col];
             const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
             if (!cellElement) continue;
             
@@ -1259,8 +1298,13 @@ function updateGameBoard() {
                 cellElement.appendChild(token);
             }
             
-            // Mark sequence positions
-            if (cellData.inSequence || isTokenInSequence(row, col)) {
+            // Check if this position is in any sequence
+            const isInSequence = cellData.inSequence || gameState.sequences.some(seq => 
+                seq.positions.some(pos => pos.row === row && pos.col === col)
+            );
+            
+            // Add sequence marker if this cell is part of a sequence
+            if (isInSequence) {
                 const sequenceMark = document.createElement('div');
                 sequenceMark.className = 'sequence';
                 sequenceMark.textContent = '★';
@@ -1288,14 +1332,17 @@ function updatePlayerInfo() {
     player1Element.className = gameState.currentPlayer === 0 ? 'active' : '';
     player2Element.className = gameState.currentPlayer === 1 ? 'active' : '';
     
-    // Update sequence counter for the current player - show their sequences
-    // Ensure sequences count is initialized to avoid NaN
-    if (typeof gameState.players[playerIndex].sequences === 'undefined') {
-        gameState.players[playerIndex].sequences = 0;
+    // Make sure sequence counts exist
+    if (typeof gameState.players[0].sequences !== 'number') {
+        gameState.players[0].sequences = 0;
+    }
+    if (typeof gameState.players[1].sequences !== 'number') {
+        gameState.players[1].sequences = 0;
     }
     
-    const playerSequences = gameState.players[playerIndex].sequences || 0;
-    sequenceCounter.textContent = `${playerSequences}/${gameState.sequencesToWin}`;
+    // Update sequence counter with the current player's sequences
+    const mySequences = gameState.players[playerIndex].sequences;
+    sequenceCounter.textContent = `${mySequences}/${gameState.sequencesToWin}`;
     
     // Update selected card
     if (gameState.selectedCard !== null && gameState.players[playerIndex].hand) {
