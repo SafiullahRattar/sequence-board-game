@@ -1,114 +1,132 @@
 class GameWebSocket {
   constructor() {
     this.socket = null;
+    this.connected = false;
+    this.connectCallbacks = [];
     this.gameId = null;
-    this.onGameState = null;
-    this.onPlayerJoined = null;
-    this.onPlayerMove = null;
-    this.onPlayerDisconnected = null;
-    this.connectionReadyCallbacks = [];
   }
 
   connect() {
+    // Determine WebSocket URL (use secure connection if on HTTPS)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
+    const host = window.location.hostname;
+    const port = window.location.port;
+    const wsUrl = `${protocol}//${host}:${port}`;
 
-    console.log('Connecting to WebSocket server at:', wsUrl);
     this.socket = new WebSocket(wsUrl);
 
     this.socket.onopen = () => {
-      console.log('Connected to server');
-      // Execute any queued callbacks waiting for connection
-      this.connectionReadyCallbacks.forEach(callback => callback());
-      this.connectionReadyCallbacks = [];
-    };
-
-    this.socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log('Received message:', data);
-
-      switch (data.type) {
-        case 'created':
-          this.gameId = data.gameId;
-          if (data.gameState) {
-            data.gameState.gameId = data.gameId;  // Ensure gameId is in the state
-          }
-          if (this.onGameState) this.onGameState(data.gameState);
-          break;
-        case 'gameState':
-          if (this.onGameState) this.onGameState(data.gameState);
-          break;
-        case 'playerJoined':
-          if (this.onPlayerJoined) this.onPlayerJoined(data.gameState);
-          break;
-        case 'move':
-          if (this.onPlayerMove) this.onPlayerMove(data.gameState);
-          break;
-        case 'playerDisconnected':
-          if (this.onPlayerDisconnected) this.onPlayerDisconnected();
-          break;
-        case 'error':
-          alert(data.message);
-          break;
-      }
+      console.log('WebSocket connection established');
+      this.connected = true;
+      this.connectCallbacks.forEach(callback => callback());
+      this.connectCallbacks = [];
     };
 
     this.socket.onclose = () => {
-      console.log('Disconnected from server');
-      alert('Connection lost. Please refresh the page.');
+      console.log('WebSocket connection closed');
+      this.connected = false;
+    };
+
+    this.socket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    this.socket.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        console.log('Received message from server:', message);
+
+        switch (message.type) {
+          case 'created':
+            this.gameId = message.gameId;
+            if (this.onGameCreated) {
+              this.onGameCreated(message);
+            }
+            break;
+
+          case 'gameState':
+            if (this.onGameState) {
+              this.onGameState(message.gameState);
+            }
+            break;
+
+          case 'playerJoined':
+            if (this.onPlayerJoined) {
+              this.onPlayerJoined(message.gameState);
+            }
+            break;
+
+          case 'move':
+            if (this.onPlayerMove) {
+              this.onPlayerMove(message.gameState);
+            }
+            break;
+
+          case 'playerDisconnected':
+            if (this.onPlayerDisconnected) {
+              this.onPlayerDisconnected();
+            }
+            break;
+
+          case 'error':
+            console.error('Error from server:', message.message);
+            break;
+        }
+      } catch (error) {
+        console.error('Error processing message:', error);
+      }
     };
   }
 
-  // New method: ensures a function runs only after connection is established
   whenConnected(callback) {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+    if (this.connected) {
       callback();
     } else {
-      this.connectionReadyCallbacks.push(callback);
+      this.connectCallbacks.push(callback);
     }
   }
 
   createGame(gameState) {
-    const sendCreateGame = () => {
-      console.log('Creating game with state:', gameState);
-      this.socket.send(JSON.stringify({
-        type: 'create',
-        gameState: gameState
-      }));
-    };
+    if (!this.connected) {
+      console.error('WebSocket not connected');
+      return;
+    }
 
-    this.whenConnected(sendCreateGame);
+    this.socket.send(JSON.stringify({
+      type: 'create',
+      gameState: gameState
+    }));
   }
 
   joinGame(gameId, playerName) {
-    const sendJoinGame = () => {
-      this.gameId = gameId;
-      console.log('Joining game:', gameId, 'as', playerName);
-      this.socket.send(JSON.stringify({
-        type: 'join',
-        gameId: gameId,
-        playerName: playerName
-      }));
-    };
+    if (!this.connected) {
+      console.error('WebSocket not connected');
+      return;
+    }
 
-    this.whenConnected(sendJoinGame);
+    this.gameId = gameId;
+    this.socket.send(JSON.stringify({
+      type: 'join',
+      gameId: gameId,
+      playerName: playerName
+    }));
   }
 
   sendMove(gameState) {
-    const sendMoveAction = () => {
-      // Ensure gameState always includes the gameId
-      if (this.gameId && !gameState.gameId) {
-        gameState.gameId = this.gameId;
-      }
+    if (!this.connected) {
+      console.error('WebSocket not connected');
+      return;
+    }
 
-      console.log('Sending move:', gameState);
-      this.socket.send(JSON.stringify({
-        type: 'move',
-        gameId: this.gameId,
-        gameState: gameState
-      }));
-    };
+    // Make sure gameId is set in the state
+    if (this.gameId) {
+      gameState.gameId = this.gameId;
+    }
 
-    this.whenConnected(sendMoveAction);
+    this.socket.send(JSON.stringify({
+      type: 'move',
+      gameId: this.gameId,
+      gameState: gameState
+    }));
   }
 }
