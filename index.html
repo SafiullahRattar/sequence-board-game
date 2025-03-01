@@ -714,8 +714,12 @@ function handlePlayerJoin(updatedGameState) {
 function updateGameFromServer(newGameState) {
     console.log("Updating game from server state:", newGameState);
     
-    // Copy the state
+    // Preserve the current client's perspective
+    const wasHost = gameState.isHost;
+    
+    // Copy the state but maintain our host/guest perspective
     gameState = JSON.parse(JSON.stringify(newGameState));
+    gameState.isHost = wasHost;
     
     // Handle game ID and link display
     if (gameState.gameId && gameLink.value === '') {
@@ -731,30 +735,18 @@ function updateGameFromServer(newGameState) {
         }
     }
     
-    // Make sure proper player names are shown
-    const playerIndex = gameState.isHost ? 0 : 1;
-    const opponentIndex = playerIndex === 0 ? 1 : 0;
+    // Update UI components
+    updateGameBoard();
+    updatePlayerInfo();
+    updatePlayerHand();
     
-    player1Element.textContent = gameState.isHost ? 
-        `${gameState.players[0].name} (You)` : 
-        gameState.players[0].name;
-        
-    player2Element.textContent = !gameState.isHost ? 
-        `${gameState.players[1].name} (You)` : 
-        gameState.players[1].name;
-    
-    // Hide setup screen and show game screen once both players have joined
+    // Show setup screen only once both players have joined
     if (gameState.players[0].name && gameState.players[1].name && 
         gameState.players[0].name !== 'Player 1' && gameState.players[1].name !== 'Player 2') {
         setupScreen.style.display = 'none';
         gameScreen.style.display = 'block';
         linkBox.style.display = 'none'; // Hide link box after player joins
     }
-    
-    // Update UI components
-    updateGameBoard();
-    updatePlayerInfo();
-    updatePlayerHand();
 }
 
         

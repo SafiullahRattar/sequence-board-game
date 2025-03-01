@@ -96,6 +96,11 @@ class GameWebSocket {
 
   sendMove(gameState) {
     const sendMoveAction = () => {
+      // Ensure gameState always includes the gameId
+      if (this.gameId && !gameState.gameId) {
+        gameState.gameId = this.gameId;
+      }
+
       console.log('Sending move:', gameState);
       this.socket.send(JSON.stringify({
         type: 'move',
