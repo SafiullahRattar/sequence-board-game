@@ -575,20 +575,22 @@
         }
         
         // Show join option
-        function showJoinOption() {
-            // Check if URL has game code
-            const urlParams = new URLSearchParams(window.location.search);
-            const gameCodeParam = urlParams.get('game');
-            
-            if (gameCodeParam) {
-                document.getElementById('joinCode').value = gameCodeParam;
-                joinForm.style.display = 'block';
-            } else {
-                setTimeout(() => {
-                    joinForm.style.display = 'block';
-                }, 1000);
-            }
-        }
+function showJoinOption() {
+    // Check if URL has game code
+    const urlParams = new URLSearchParams(window.location.search);
+    const gameCodeParam = urlParams.get('game');
+    
+    if (gameCodeParam) {
+        // This is a joining player, set default name to Player 2
+        document.getElementById('username').value = 'Player 2';
+        document.getElementById('joinCode').value = gameCodeParam;
+        joinForm.style.display = 'block';
+    } else {
+        setTimeout(() => {
+            joinForm.style.display = 'block';
+        }, 1000);
+    }
+}
         
         // Create a new game
 function createNewGame() {
@@ -669,8 +671,8 @@ function joinExistingGame() {
     socket.onGameState = (state) => {
         console.log("Received game state when joining:", state);
         
-        // Make sure we flag this as guest
-        state.isHost = false;
+        // IMPORTANT: Set this client as guest (Player 2)
+        gameState.isHost = false;
         
         // Ensure the game board is properly displayed
         updateGameFromServer(state);
@@ -715,10 +717,12 @@ function updateGameFromServer(newGameState) {
     console.log("Updating game from server state:", newGameState);
     
     // Preserve the current client's perspective
-    const wasHost = gameState.isHost;
+    const wasHost = gameState.isHost !== undefined ? gameState.isHost : true;
     
-    // Copy the state but maintain our host/guest perspective
+    // Copy the state
     gameState = JSON.parse(JSON.stringify(newGameState));
+    
+    // Always maintain the client perspective
     gameState.isHost = wasHost;
     
     // Handle game ID and link display
