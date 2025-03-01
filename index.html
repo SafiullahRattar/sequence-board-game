@@ -652,34 +652,46 @@ function createNewGame() {
 }
         
         // Join an existing game
-        function joinExistingGame() {
-            const username = document.getElementById('username').value || 'Player 2';
-            const gameCodeValue = document.getElementById('joinCode').value.trim().toUpperCase();
-            
-            if (!gameCodeValue) {
-                showNotification('Please enter a valid game code');
-                return;
-            }
-            
-            // Initialize websocket
-            const socket = new GameWebSocket();
-            socket.connect();
-            
-            // Set up WebSocket callbacks
-            socket.onGameState = updateGameFromServer;
-            socket.onPlayerMove = updateGameFromServer;
-            socket.onPlayerDisconnected = handlePlayerDisconnect;
-            
-            // Join game
-            socket.joinGame(gameCodeValue);
-            
-            // Update UI
-            joinGameButton.disabled = true;
-            joinGameButton.textContent = 'Joining...';
-            
-            // Update state
-            gameState.isHost = false;
-        }
+function joinExistingGame() {
+    const username = document.getElementById('username').value || 'Player 2';
+    const gameCodeValue = document.getElementById('joinCode').value.trim().toUpperCase();
+    
+    if (!gameCodeValue) {
+        showNotification('Please enter a valid game code');
+        return;
+    }
+    
+    // Initialize websocket
+    const socket = new GameWebSocket();
+    socket.connect();
+    
+    // Set up WebSocket callbacks
+    socket.onGameState = (state) => {
+        console.log("Received game state when joining:", state);
+        
+        // Make sure we flag this as guest
+        state.isHost = false;
+        
+        // Ensure the game board is properly displayed
+        updateGameFromServer(state);
+        
+        // Switch to game screen
+        setupScreen.style.display = 'none';
+        gameScreen.style.display = 'block';
+    };
+    
+    socket.onPlayerMove = updateGameFromServer;
+    socket.onPlayerDisconnected = handlePlayerDisconnect;
+    
+    // Disable join button to prevent multiple clicks
+    joinGameButton.disabled = true;
+    joinGameButton.textContent = 'Joining...';
+    
+    // Send join message when connection is ready
+    socket.whenConnected(() => {
+        socket.joinGame(gameCodeValue, username);
+    });
+}
         
         // Handle player joining
 function handlePlayerJoin(updatedGameState) {
@@ -701,9 +713,11 @@ function handlePlayerJoin(updatedGameState) {
         // Update game from server
 function updateGameFromServer(newGameState) {
     console.log("Updating game from server state:", newGameState);
-    gameState = {...newGameState};
     
-    // If this is first update with game ID
+    // Copy the state
+    gameState = JSON.parse(JSON.stringify(newGameState));
+    
+    // Handle game ID and link display
     if (gameState.gameId && gameLink.value === '') {
         const baseUrl = window.location.origin + window.location.pathname;
         const gameUrl = `${baseUrl}?game=${gameState.gameId}`;
@@ -712,19 +726,32 @@ function updateGameFromServer(newGameState) {
         gameLink.value = gameUrl;
         gameCode.textContent = gameState.gameId;
         
-        // Show link box and hide it after player joins
-        linkBox.style.display = 'block';
+        if (gameState.isHost) {
+            linkBox.style.display = 'block';
+        }
     }
     
-    // Switch to game screen only when both players are ready
-    if ((gameState.isHost && gameState.players[1].name !== 'Player 2') || 
-        (!gameState.isHost && gameState.players[0].hand.length > 0)) {
+    // Make sure proper player names are shown
+    const playerIndex = gameState.isHost ? 0 : 1;
+    const opponentIndex = playerIndex === 0 ? 1 : 0;
+    
+    player1Element.textContent = gameState.isHost ? 
+        `${gameState.players[0].name} (You)` : 
+        gameState.players[0].name;
+        
+    player2Element.textContent = !gameState.isHost ? 
+        `${gameState.players[1].name} (You)` : 
+        gameState.players[1].name;
+    
+    // Hide setup screen and show game screen once both players have joined
+    if (gameState.players[0].name && gameState.players[1].name && 
+        gameState.players[0].name !== 'Player 1' && gameState.players[1].name !== 'Player 2') {
         setupScreen.style.display = 'none';
         gameScreen.style.display = 'block';
-        linkBox.style.display = 'none';
+        linkBox.style.display = 'none'; // Hide link box after player joins
     }
     
-    // Update UI elements
+    // Update UI components
     updateGameBoard();
     updatePlayerInfo();
     updatePlayerHand();
@@ -1101,51 +1128,58 @@ function updateGameFromServer(newGameState) {
         }
         
         // Update player hand UI
-        function updatePlayerHand() {
-            const playerIndex = gameState.isHost ? 0 : 1;
-            playerHand.innerHTML = '';
-            
-            gameState.players[playerIndex].hand.forEach((card, index) => {
-                const cardElement = document.createElement('div');
-                cardElement.className = 'card';
-                if (gameState.selectedCard === index) {
-                    cardElement.classList.add('selected');
-                }
-                
-                const isRed = card.includes('♥') || card.includes('♦');
-                
-                const value = card.slice(0, -1);
-                const suit = card.slice(-1);
-                
-                const cardValue = document.createElement('span');
-                cardValue.textContent = value;
-                if (isRed) cardValue.classList.add('red');
-                
-                const cardSuitTop = document.createElement('span');
-                cardSuitTop.textContent = suit;
-                cardSuitTop.className = 'card-suit top';
-                if (isRed) cardSuitTop.classList.add('red');
-                
-                const cardSuitBottom = document.createElement('span');
-                cardSuitBottom.textContent = suit;
-                cardSuitBottom.className = 'card-suit bottom';
-                if (isRed) cardSuitBottom.classList.add('red');
-                
-                cardElement.appendChild(cardValue);
-                cardElement.appendChild(cardSuitTop);
-                cardElement.appendChild(cardSuitBottom);
-                
-                cardElement.addEventListener('click', () => {
-                    if (gameState.currentPlayer === playerIndex) {
-                        gameState.selectedCard = index;
-                        updatePlayerHand();
-                        updatePlayerInfo();
-                    }
-                });
-                
-                playerHand.appendChild(cardElement);
-            });
+function updatePlayerHand() {
+    const playerIndex = gameState.isHost ? 0 : 1;
+    playerHand.innerHTML = '';
+    
+    if (!gameState.players[playerIndex] || !gameState.players[playerIndex].hand) {
+        console.error("Player hand is missing:", gameState.players[playerIndex]);
+        return;
+    }
+    
+    gameState.players[playerIndex].hand.forEach((card, index) => {
+        const cardElement = document.createElement('div');
+        cardElement.className = 'card';
+        if (gameState.selectedCard === index) {
+            cardElement.classList.add('selected');
         }
+        
+        const isRed = card.includes('♥') || card.includes('♦');
+        
+        const value = card.slice(0, -1);
+        const suit = card.slice(-1);
+        
+        const cardValue = document.createElement('span');
+        cardValue.textContent = value;
+        if (isRed) cardValue.classList.add('red');
+        
+        const cardSuitTop = document.createElement('span');
+        cardSuitTop.textContent = suit;
+        cardSuitTop.className = 'card-suit top';
+        if (isRed) cardSuitTop.classList.add('red');
+        
+        const cardSuitBottom = document.createElement('span');
+        cardSuitBottom.textContent = suit;
+        cardSuitBottom.className = 'card-suit bottom';
+        if (isRed) cardSuitBottom.classList.add('red');
+        
+        cardElement.appendChild(cardValue);
+        cardElement.appendChild(cardSuitTop);
+        cardElement.appendChild(cardSuitBottom);
+        
+        cardElement.addEventListener('click', () => {
+            if (gameState.currentPlayer === playerIndex) {
+                gameState.selectedCard = index;
+                updatePlayerHand();
+                updatePlayerInfo();
+            } else {
+                showNotification("It's not your turn");
+            }
+        });
+        
+        playerHand.appendChild(cardElement);
+    });
+}
         
         // Show notification
         function showNotification(message) {

@@ -80,13 +80,14 @@ class GameWebSocket {
     this.whenConnected(sendCreateGame);
   }
 
-  joinGame(gameId) {
+  joinGame(gameId, playerName) {
     const sendJoinGame = () => {
       this.gameId = gameId;
-      console.log('Joining game:', gameId);
+      console.log('Joining game:', gameId, 'as', playerName);
       this.socket.send(JSON.stringify({
         type: 'join',
-        gameId: gameId
+        gameId: gameId,
+        playerName: playerName
       }));
     };
 
