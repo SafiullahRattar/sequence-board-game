@@ -630,8 +630,17 @@ function createNewGame() {
         sequences: [],
         isHost: true
     };
+    if (username.toLowerCase() === 'dev') {
+    // Create a specific hand for testing sequence creation
+    const testHand = ['10♠', 'Q♠', 'K♠', 'A♠', '3♦', '4♦', '5♦'];
+    newGameState.players[0].hand = testHand;
     
-    // Deal cards only to host player initially
+    // Remove these cards from the deck to avoid duplicates
+    newGameState.deck = newGameState.deck.filter(card => !testHand.includes(card));
+    
+    console.log("Dev mode: Test hand created with sequence-making cards");
+} else {
+    // Regular card dealing for non-dev players
     const playerHand = [];
     for (let i = 0; i < 7; i++) {
         if (newGameState.deck.length > 0) {
@@ -639,6 +648,15 @@ function createNewGame() {
         }
     }
     newGameState.players[0].hand = playerHand;
+}
+    // Deal cards only to host player initially
+    // const playerHand = [];
+    // for (let i = 0; i < 7; i++) {
+    //     if (newGameState.deck.length > 0) {
+    //         playerHand.push(newGameState.deck.pop());
+    //     }
+    // }
+    // newGameState.players[0].hand = playerHand;
     
     // Set up WebSocket callbacks
     gameWebSocket.onGameCreated = (response) => {
@@ -978,104 +996,110 @@ function playCard(cardIndex) {
 }
         
         // Check if a token is part of a sequence
-        function isTokenInSequence(row, col) {
-            for (const sequence of gameState.sequences) {
-                for (const position of sequence.positions) {
-                    if (position.row === row && position.col === col) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
+function isTokenInSequence(row, col) {
+    return gameState.sequences.some(sequence => 
+        sequence.positions.some(pos => pos.row === row && pos.col === col)
+    );
+}
         
         // Check for sequences
-        function checkForSequences() {
-            const playerIndex = gameState.isHost ? 0 : 1;
-            const playerColor = gameState.players[playerIndex].color;
-            
-            // Define directions for sequence checking (horizontal, vertical, diagonal)
-            const directions = [
-                {dr: 0, dc: 1},  // horizontal
-                {dr: 1, dc: 0},  // vertical
-                {dr: 1, dc: 1},  // diagonal down-right
-                {dr: 1, dc: -1}, // diagonal down-left
-            ];
-            
-            const newSequences = [];
-            
-            // Check for 5 in a row
-            for (let row = 0; row < 10; row++) {
-                for (let col = 0; col < 10; col++) {
-                    for (const dir of directions) {
-                        const sequence = checkSequence(row, col, dir.dr, dir.dc, playerColor);
-                        if (sequence) {
-                            // Check if this sequence overlaps with existing sequences
-                            let isNew = true;
-                            for (const existingSeq of gameState.sequences) {
-                                if (sequencesOverlap(sequence, existingSeq)) {
-                                    isNew = false;
-                                    break;
-                                }
+function checkForSequences() {
+    const playerIndex = gameState.isHost ? 0 : 1;
+    const playerColor = gameState.players[playerIndex].color;
+    
+    // Define directions for sequence checking
+    const directions = [
+        {dr: 0, dc: 1},  // horizontal
+        {dr: 1, dc: 0},  // vertical
+        {dr: 1, dc: 1},  // diagonal down-right
+        {dr: 1, dc: -1}, // diagonal down-left
+    ];
+    
+    const newSequences = [];
+    
+    // Check every possible starting position
+    for (let row = 0; row < 10; row++) {
+        for (let col = 0; col < 10; col++) {
+            for (const dir of directions) {
+                // Only check if there's enough room for a sequence in this direction
+                const endRow = row + (dir.dr * 4);
+                const endCol = col + (dir.dc * 4);
+                
+                if (endRow >= 0 && endRow < 10 && endCol >= 0 && endCol < 10) {
+                    const sequence = checkSequence(row, col, dir.dr, dir.dc, playerColor);
+                    if (sequence) {
+                        // Check if this sequence is already counted
+                        let isUnique = true;
+                        for (const existingSeq of gameState.sequences) {
+                            if (sequencesEqual(sequence, existingSeq)) {
+                                isUnique = false;
+                                break;
                             }
-                            
-                            if (isNew) {
-                                newSequences.push(sequence);
-                            }
+                        }
+                        if (isUnique) {
+                            newSequences.push(sequence);
                         }
                     }
                 }
             }
-            
-            // Add new sequences and update player's sequence count
-            if (newSequences.length > 0) {
-                gameState.sequences = [...gameState.sequences, ...newSequences];
-                gameState.players[playerIndex].sequences += newSequences.length;
-                
-                // Check win condition
-                if (gameState.players[playerIndex].sequences >= gameState.sequencesToWin) {
-                    setTimeout(() => {
-                        showNotification(`${gameState.players[playerIndex].name} wins the game!`);
-                    }, 500);
-                }
-            }
         }
+    }
+    
+    // Add new sequences and update player's sequence count
+    if (newSequences.length > 0) {
+        gameState.sequences = [...gameState.sequences, ...newSequences];
+        gameState.players[playerIndex].sequences += newSequences.length;
+        
+        // Check win condition
+        if (gameState.players[playerIndex].sequences >= gameState.sequencesToWin) {
+            setTimeout(() => {
+                showNotification(`${gameState.players[playerIndex].name} wins the game!`);
+            }, 500);
+        }
+        
+        // Update the board to show new sequences
+        updateGameBoard();
+    }
+}
         
         // Check for a sequence from a starting position
-        function checkSequence(startRow, startCol, deltaRow, deltaCol, playerColor) {
-            const positions = [];
-            let count = 0;
-            
-            for (let i = 0; i < 5; i++) {
-                const row = startRow + (i * deltaRow);
-                const col = startCol + (i * deltaCol);
-                
-                // Check bounds
-                if (row < 0 || row >= 10 || col < 0 || col >= 10) {
-                    return null;
-                }
-                
-                const cell = gameState.board[row][col];
-                
-                // Count if cell has player's token or is a free corner
-                if ((cell.token === playerColor) || (cell.type === 'free')) {
-                    positions.push({row, col});
-                    count++;
-                } else {
-                    return null;
-                }
-            }
-            
-            if (count === 5) {
-                return {
-                    player: playerColor,
-                    positions: positions
-                };
-            }
-            
+function checkSequence(startRow, startCol, deltaRow, deltaCol, playerColor) {
+    const positions = [];
+    let count = 0;
+    
+    for (let i = 0; i < 5; i++) {
+        const row = startRow + (i * deltaRow);
+        const col = startCol + (i * deltaCol);
+        
+        const cell = gameState.board[row][col];
+        
+        // Check if cell has player's token or is a free corner
+        if (cell.type === 'free' || cell.token === playerColor) {
+            positions.push({row, col});
+            count++;
+        } else {
             return null;
         }
+    }
+    
+    return count === 5 ? {
+        player: playerColor,
+        positions: positions
+    } : null;
+}
         
+
+function sequencesEqual(seq1, seq2) {
+    if (seq1.player !== seq2.player || seq1.positions.length !== seq2.positions.length) {
+        return false;
+    }
+    
+    const positionsMatch = seq1.positions.every(pos1 => 
+        seq2.positions.some(pos2 => pos2.row === pos1.row && pos2.col === pos1.col)
+    );
+    
+    return positionsMatch;
+}
         // Check if two sequences overlap
         function sequencesOverlap(seq1, seq2) {
             // Different players can't overlap
