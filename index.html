@@ -675,26 +675,31 @@
         }
         
         // Update game from server
-        function updateGameFromServer(newGameState) {
-            gameState = {...newGameState};
-            
-            // If this is first update with game ID, update URL and link
-            if (gameState.gameId && !window.location.href.includes('game=')) {
-                const gameUrl = `${window.location.origin}${window.location.pathname}?game=${gameState.gameId}`;
-                window.history.pushState({}, '', gameUrl);
-                gameLink.value = gameUrl;
-                gameCode.textContent = gameState.gameId;
-            }
-            
-            // Switch to game screen
-            setupScreen.style.display = 'none';
-            gameScreen.style.display = 'block';
-            
-            // Update UI
-            updateGameBoard();
-            updatePlayerInfo();
-            updatePlayerHand();
-        }
+function updateGameFromServer(newGameState) {
+    gameState = {...newGameState};
+    
+    // If this is first update with game ID, update URL and link
+    if (gameState.gameId && gameLink.value === '') {
+        // Use absolute URL construction for Glitch
+        const baseUrl = window.location.origin;
+        const gameUrl = `${baseUrl}?game=${gameState.gameId}`;
+        
+        console.log("Generated game URL:", gameUrl); // For debugging
+        window.history.pushState({}, '', gameUrl);
+        gameLink.value = gameUrl;
+        gameCode.textContent = gameState.gameId;
+    }
+    
+    // Switch to game screen
+    setupScreen.style.display = 'none';
+    gameScreen.style.display = 'block';
+    
+    // Update UI
+    updateGameBoard();
+    updatePlayerInfo();
+    updatePlayerHand();
+}
+
         
         // Initialize the board
         function initializeBoard() {
