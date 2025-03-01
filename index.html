@@ -890,28 +890,32 @@ function updateGameFromServer(newGameState) {
         
         // Handle jack placement
         function handleJackPlacement(row, col, selectedCard) {
-            const playerIndex = gameState.isHost ? 0 : 1;
-            const opponentIndex = playerIndex === 0 ? 1 : 0;
+          const playerIndex = gameState.isHost ? 0 : 1;
+    const opponentIndex = playerIndex === 0 ? 1 : 0;
+    
+    if (SPECIAL_JACKS[selectedCard] === 'one-eyed') {
+        // One-eyed jack (remove opponent's token)
+        if (row < 0 || row >= 10 || col < 0 || col >= 10) return;
+        
+        const cell = gameState.board[row][col];
+        if (!cell || cell.type === 'free') return;
+        
+        // Check if token exists and belongs to opponent
+        if (cell.token === gameState.players[opponentIndex].color) {
+            // Check if token is part of a sequence
+            const isPartOfSequence = isTokenInSequence(row, col);
+            console.log(`Checking token at [${row},${col}] for sequence membership:`, isPartOfSequence);
+            console.log('Current sequences:', gameState.sequences);
             
-            if (SPECIAL_JACKS[selectedCard] === 'one-eyed') {
-                // One-eyed jack (remove opponent's token)
-                if (row < 0 || row >= 10 || col < 0 || col >= 10) return;
-                
-                const cell = gameState.board[row][col];
-                if (!cell || cell.type === 'free') return;
-                
-                // Check if token exists and belongs to opponent
-                if (cell.token === gameState.players[opponentIndex].color) {
-                    // Check if token is part of a sequence
-                    const isPartOfSequence = isTokenInSequence(row, col);
-                    if (isPartOfSequence) {
-                        showNotification("Can't remove a token that's part of a sequence");
-                        return;
-                    }
-                    
-                    // Remove token
-                    gameState.board[row][col].token = null;
-                    playCard(gameState.selectedCard);
+            if (isPartOfSequence) {
+                showNotification("Can't remove a token that's part of a sequence");
+                return;
+            }
+            
+            // Remove token
+            gameState.board[row][col].token = null;
+            playCard(gameState.selectedCard);
+
                 }
                 else {
                     showNotification("One-eyed jack can only remove opponent's tokens");
@@ -997,9 +1001,16 @@ function playCard(cardIndex) {
         
         // Check if a token is part of a sequence
 function isTokenInSequence(row, col) {
-    return gameState.sequences.some(sequence => 
-        sequence.positions.some(pos => pos.row === row && pos.col === col)
-    );
+    // More explicit check through all sequences
+    for (const sequence of gameState.sequences) {
+        if (sequence.positions.some(pos => 
+            pos.row === row && 
+            pos.col === col
+        )) {
+            return true;
+        }
+    }
+    return false;
 }
         
         // Check for sequences
