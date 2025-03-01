@@ -66,6 +66,16 @@ wss.on('connection', (ws) => {
 
             // Make sure the gameId is set
             guestState.gameId = gameId;
+            
+            // Deal cards to the guest player (7 cards)
+            const guestHand = [];
+            for (let i = 0; i < 7; i++) {
+                if (game.gameState.deck.length > 0) {
+                    guestHand.push(game.gameState.deck.pop());
+                }
+            }
+            guestState.players[1].hand = guestHand;
+            game.gameState.players[1].hand = guestHand;
 
             // Update player names if provided
             if (data.playerName) {

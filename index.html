@@ -292,6 +292,17 @@
             to { transform: rotate(360deg); }
         }
         
+        .cell.highlight-available {
+            box-shadow: 0 0 10px 2px gold;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 5px 2px gold; }
+            50% { box-shadow: 0 0 15px 5px gold; }
+            100% { box-shadow: 0 0 5px 2px gold; }
+        }
+        
         @media (max-width: 768px) {
             .board {
                 grid-template-columns: repeat(10, 35px);
@@ -921,6 +932,12 @@ function playCard(cardIndex) {
     // Reset selected card
     gameState.selectedCard = null;
     
+    // Clear highlights
+    const cells = document.querySelectorAll('.cell');
+    cells.forEach(cell => {
+        cell.classList.remove('highlight-available');
+    });
+    
     // Switch to other player
     gameState.currentPlayer = gameState.currentPlayer === 0 ? 1 : 0;
     
@@ -1057,6 +1074,63 @@ function playCard(cardIndex) {
             return overlapCount >= 3;
         }
         
+        // Highlight available moves for the selected card
+        function highlightAvailableMoves(selectedCard) {
+            // Clear any existing highlights
+            const cells = document.querySelectorAll('.cell');
+            cells.forEach(cell => {
+                cell.classList.remove('highlight-available');
+            });
+            
+            if (selectedCard === null) return;
+            
+            const playerIndex = gameState.isHost ? 0 : 1;
+            const cardValue = gameState.players[playerIndex].hand[selectedCard];
+            
+            // Handle special jacks differently
+            if (SPECIAL_JACKS[cardValue]) {
+                if (SPECIAL_JACKS[cardValue] === 'one-eyed') {
+                    // One-eyed jack: highlight opponent tokens not in sequences
+                    const opponentIndex = playerIndex === 0 ? 1 : 0;
+                    const opponentColor = gameState.players[opponentIndex].color;
+                    
+                    for (let row = 0; row < 10; row++) {
+                        for (let col = 0; col < 10; col++) {
+                            if (gameState.board[row][col].token === opponentColor) {
+                                if (!isTokenInSequence(row, col)) {
+                                    const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+                                    if (cellElement) cellElement.classList.add('highlight-available');
+                                }
+                            }
+                        }
+                    }
+                } else if (SPECIAL_JACKS[cardValue] === 'two-eyed') {
+                    // Two-eyed jack: highlight all empty spaces
+                    for (let row = 0; row < 10; row++) {
+                        for (let col = 0; col < 10; col++) {
+                            if (gameState.board[row][col].type === 'card' && 
+                                gameState.board[row][col].token === null) {
+                                const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+                                if (cellElement) cellElement.classList.add('highlight-available');
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Regular card: highlight matching card spaces
+                for (let row = 0; row < 10; row++) {
+                    for (let col = 0; col < 10; col++) {
+                        if (gameState.board[row][col].type === 'card' && 
+                            gameState.board[row][col].code === cardValue && 
+                            gameState.board[row][col].token === null) {
+                            const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+                            if (cellElement) cellElement.classList.add('highlight-available');
+                        }
+                    }
+                }
+            }
+        }
+
         // Update the game board UI
         function updateGameBoard() {
             // Clear all tokens
@@ -1171,6 +1245,7 @@ function updatePlayerHand() {
                 gameState.selectedCard = index;
                 updatePlayerHand();
                 updatePlayerInfo();
+                highlightAvailableMoves(index); // Highlight available moves
             } else {
                 showNotification("It's not your turn");
             }
