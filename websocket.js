@@ -42,30 +42,7 @@ class GameWebSocket {
           if (this.onPlayerJoined) this.onPlayerJoined(data.gameState);
           break;
         case 'move':
-          const currentGame = games.get(gameId || data.gameId);
-          if (currentGame) {
-            // Update game state
-            currentGame.gameState = data.gameState;
-
-            // Send move to other player
-            const otherPlayer = playerId === 'host' ? currentGame.guest : currentGame.host;
-            if (otherPlayer && otherPlayer.readyState === WebSocket.OPEN) {
-              console.log(`Sending move to ${playerId === 'host' ? 'guest' : 'host'}`);
-
-              // Create a version of the state appropriate for the recipient
-              const stateForRecipient = JSON.parse(JSON.stringify(data.gameState));
-              stateForRecipient.isHost = playerId !== 'host'; // Opposite of sender
-
-              otherPlayer.send(JSON.stringify({
-                type: 'move',
-                gameState: stateForRecipient
-              }));
-            } else {
-              console.log(`Other player not available or disconnected`);
-            }
-          } else {
-            console.log(`Game not found: ${gameId || data.gameId}`);
-          }
+          if (this.onPlayerMove) this.onPlayerMove(data.gameState);
           break;
         case 'playerDisconnected':
           if (this.onPlayerDisconnected) this.onPlayerDisconnected();
