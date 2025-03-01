@@ -592,15 +592,15 @@ function showJoinOption() {
     }
 }
         
-        // Create a new game
+let gameWebSocket = null;     // Create a new game
 function createNewGame() {
     const username = document.getElementById('username').value || 'Player 1';
     const sequencesToWin = parseInt(document.getElementById('sequences').value);
     const firstPlayer = document.getElementById('firstPlayer').value === 'host' ? 0 : 1;
-    
+    gameWebSocket = new GameWebSocket();
+    gameWebSocket.connect();
+
     // Initialize websocket
-    const socket = new GameWebSocket();
-    socket.connect();
     
     // Prepare game state
     const newGameState = {
@@ -627,26 +627,26 @@ function createNewGame() {
     newGameState.players[0].hand = playerHand;
     
     // Set up WebSocket callbacks
-    socket.onGameState = (state) => {
+    gameWebSocket.onGameState = (state) => {
         console.log("Game state received:", state);
         updateGameFromServer(state);
     };
     
-    socket.onPlayerJoined = (state) => {
+    gameWebSocket.onPlayerJoined = (state) => {
         console.log("Player joined:", state);
         handlePlayerJoin(state);
     };
     
-    socket.onPlayerMove = updateGameFromServer;
-    socket.onPlayerDisconnected = handlePlayerDisconnect;
+    gameWebSocket.onPlayerMove = updateGameFromServer;
+    gameWebSocket.onPlayerDisconnected = handlePlayerDisconnect;
     
     // Disable create button and show loading state
     createGameButton.disabled = true;
     createGameButton.textContent = 'Creating game...';
     
     // Only create the game in WebSocket after connection is ready
-    socket.whenConnected(() => {
-        socket.createGame(newGameState);
+  gameWebSocket.whenConnected(() => {
+        gameWebSocket.createGame(newGameState);
     });
     
     // Don't switch to game screen yet - wait for server confirmation
@@ -664,11 +664,11 @@ function joinExistingGame() {
     }
     
     // Initialize websocket
-    const socket = new GameWebSocket();
-    socket.connect();
+gameWebSocket = new GameWebSocket();
+gameWebSocket.connect();
     
     // Set up WebSocket callbacks
-    socket.onGameState = (state) => {
+    gameWebSocket.onGameState = (state) => {
         console.log("Received game state when joining:", state);
         
         // IMPORTANT: Set this client as guest (Player 2)
@@ -682,16 +682,16 @@ function joinExistingGame() {
         gameScreen.style.display = 'block';
     };
     
-    socket.onPlayerMove = updateGameFromServer;
-    socket.onPlayerDisconnected = handlePlayerDisconnect;
+    gameWebSocket.onPlayerMove = updateGameFromServer;
+    gameWebSocket.onPlayerDisconnected = handlePlayerDisconnect;
     
     // Disable join button to prevent multiple clicks
     joinGameButton.disabled = true;
     joinGameButton.textContent = 'Joining...';
     
     // Send join message when connection is ready
-    socket.whenConnected(() => {
-        socket.joinGame(gameCodeValue, username);
+    gameWebSocket.whenConnected(() => {
+        gameWebSocket.joinGame(gameCodeValue, username);
     });
 }
         
@@ -719,7 +719,7 @@ function updateGameFromServer(newGameState) {
     // Preserve the current client's perspective
     const wasHost = gameState.isHost !== undefined ? gameState.isHost : true;
     
-    // Copy the state
+    // Copy the state, making sure we're getting a complete update
     gameState = JSON.parse(JSON.stringify(newGameState));
     
     // Always maintain the client perspective
@@ -744,7 +744,7 @@ function updateGameFromServer(newGameState) {
     updatePlayerInfo();
     updatePlayerHand();
     
-    // Show setup screen only once both players have joined
+    // Show game screen once both players have joined
     if (gameState.players[0].name && gameState.players[1].name && 
         gameState.players[0].name !== 'Player 1' && gameState.players[1].name !== 'Player 2') {
         setupScreen.style.display = 'none';
@@ -907,33 +907,35 @@ function updateGameFromServer(newGameState) {
         }
         
         // Play a card from hand
-        function playCard(cardIndex) {
-            const playerIndex = gameState.isHost ? 0 : 1;
-            
-            // Remove card from hand
-            const playedCard = gameState.players[playerIndex].hand.splice(cardIndex, 1)[0];
-            
-            // Draw new card if available
-            if (gameState.deck.length > 0) {
-                gameState.players[playerIndex].hand.push(gameState.deck.pop());
-            }
-            
-            // Reset selected card
-            gameState.selectedCard = null;
-            
-            // Switch to other player
-            gameState.currentPlayer = gameState.currentPlayer === 0 ? 1 : 0;
-            
-            // Update UI
-            updateGameBoard();
-            updatePlayerInfo();
-            updatePlayerHand();
-            
-            // Send updated state to server
-            const webSocket = new GameWebSocket();
-            webSocket.connect();
-            webSocket.sendMove(gameState);
-        }
+function playCard(cardIndex) {
+    const playerIndex = gameState.isHost ? 0 : 1;
+    
+    // Remove card from hand
+    const playedCard = gameState.players[playerIndex].hand.splice(cardIndex, 1)[0];
+    
+    // Draw new card if available
+    if (gameState.deck.length > 0) {
+        gameState.players[playerIndex].hand.push(gameState.deck.pop());
+    }
+    
+    // Reset selected card
+    gameState.selectedCard = null;
+    
+    // Switch to other player
+    gameState.currentPlayer = gameState.currentPlayer === 0 ? 1 : 0;
+    
+    // Update UI
+    updateGameBoard();
+    updatePlayerInfo();
+    updatePlayerHand();
+    
+    // Send updated state to server - USE THE GLOBAL WEBSOCKET
+    if (gameWebSocket) {
+        gameWebSocket.sendMove(gameState);
+    } else {
+        console.error("WebSocket not initialized when attempting to send move");
+    }
+}
         
         // Check if a token is part of a sequence
         function isTokenInSequence(row, col) {
