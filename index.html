@@ -889,55 +889,52 @@ function updateGameFromServer(newGameState) {
         }
         
         // Handle jack placement
-        function handleJackPlacement(row, col, selectedCard) {
-          const playerIndex = gameState.isHost ? 0 : 1;
-    const opponentIndex = playerIndex === 0 ? 1 : 0;
+function handleJackPlacement(row, col, selectedCard) {
+  const playerIndex = gameState.isHost ? 0 : 1;
+  const opponentIndex = playerIndex === 0 ? 1 : 0;
+  
+  if (SPECIAL_JACKS[selectedCard] === 'one-eyed') {
+    // One-eyed jack (remove opponent's token)
+    if (row < 0 || row >= 10 || col < 0 || col >= 10) return;
     
-    if (SPECIAL_JACKS[selectedCard] === 'one-eyed') {
-        // One-eyed jack (remove opponent's token)
-        if (row < 0 || row >= 10 || col < 0 || col >= 10) return;
-        
-        const cell = gameState.board[row][col];
-        if (!cell || cell.type === 'free') return;
-        
-        // Check if token exists and belongs to opponent
-        if (cell.token === gameState.players[opponentIndex].color) {
-            // Check if token is part of a sequence
-            const isPartOfSequence = isTokenInSequence(row, col);
-            console.log(`Checking token at [${row},${col}] for sequence membership:`, isPartOfSequence);
-            console.log('Current sequences:', gameState.sequences);
-            
-            if (isPartOfSequence) {
-                showNotification("Can't remove a token that's part of a sequence");
-                return;
-            }
-            
-            // Remove token
-            gameState.board[row][col].token = null;
-            playCard(gameState.selectedCard);
-
-                }
-                else {
-                    showNotification("One-eyed jack can only remove opponent's tokens");
-                }
-            } else if (SPECIAL_JACKS[selectedCard] === 'two-eyed') {
-                // Two-eyed jack (place token anywhere)
-                if (row < 0 || row >= 10 || col < 0 || col >= 10) return;
-                
-                const cell = gameState.board[row][col];
-                if (!cell || cell.type === 'free') return;
-                
-                if (cell.token === null) {
-                    // Place token
-                    gameState.board[row][col].token = gameState.players[playerIndex].color;
-                    playCard(gameState.selectedCard);
-                    checkForSequences();
-                }
-                else {
-                    showNotification("Can't place on an occupied space");
-                }
-            }
-        }
+    const cell = gameState.board[row][col];
+    if (!cell || cell.type === 'free') return;
+    
+    // Check if token exists and belongs to opponent
+    if (cell.token === gameState.players[opponentIndex].color) {
+      // Check if token is part of a sequence
+      const isPartOfSequence = isTokenInSequence(row, col);
+      
+      if (isPartOfSequence || cell.inSequence) {
+        showNotification("Can't remove a token that's part of a sequence");
+        return;
+      }
+      
+      // Remove token
+      gameState.board[row][col].token = null;
+      playCard(gameState.selectedCard);
+    }
+    else {
+      showNotification("One-eyed jack can only remove opponent's tokens");
+    }
+  } else if (SPECIAL_JACKS[selectedCard] === 'two-eyed') {
+    // Two-eyed jack (place token anywhere)
+    if (row < 0 || row >= 10 || col < 0 || col >= 10) return;
+    
+    const cell = gameState.board[row][col];
+    if (!cell || cell.type === 'free') return;
+    
+    if (cell.token === null) {
+      // Place token
+      gameState.board[row][col].token = gameState.players[playerIndex].color;
+      playCard(gameState.selectedCard);
+      checkForSequences();
+    }
+    else {
+      showNotification("Can't place on an occupied space");
+    }
+  }
+}
         
         // Handle regular card placement
         function handleRegularPlacement(row, col, selectedCard) {
@@ -1057,18 +1054,18 @@ function checkForSequences() {
     }
     
     // Add new sequences and update player's sequence count
-    if (newSequences.length > 0) {
+ if (newSequences.length > 0) {
+        // Add new sequences to gameState
         gameState.sequences = [...gameState.sequences, ...newSequences];
         gameState.players[playerIndex].sequences += newSequences.length;
         
-        // Check win condition
-        if (gameState.players[playerIndex].sequences >= gameState.sequencesToWin) {
-            setTimeout(() => {
-                showNotification(`${gameState.players[playerIndex].name} wins the game!`);
-            }, 500);
-        }
+        // Mark each cell in the sequence as part of a sequence
+        newSequences.forEach(sequence => {
+            sequence.positions.forEach(pos => {
+                gameState.board[pos.row][pos.col].inSequence = true;
+            });
+        });
         
-        // Update the board to show new sequences
         updateGameBoard();
     }
 }
