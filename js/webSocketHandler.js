@@ -17,7 +17,8 @@ class GameWebSocketHandler {
       try {
         // Determine WebSocket URL (use secure connection if on HTTPS)
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.hostname === 'localhost' ? 'localhost:3000' : window.location.host;
+        const host = window.location.host;
+        console.log('Attempting WebSocket connection to:', `${protocol}//${host}`);
         this.socket = new WebSocket(`${protocol}//${host}`);
 
         this.socket.onopen = () => {

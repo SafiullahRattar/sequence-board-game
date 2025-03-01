@@ -11,6 +11,19 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+// Log WebSocket server status
+console.log('WebSocket server created');
+
+// Add error handler for WebSocket server
+wss.on('error', (error) => {
+  console.error('WebSocket server error:', error);
+});
+
+// Log when the WebSocket server is ready
+wss.on('listening', () => {
+  console.log('WebSocket server is ready');
+});
+
 // Store active games
 const games = new Map();
 
@@ -166,6 +179,20 @@ wss.on('connection', (ws) => {
 
 // Start server
 const port = process.env.PORT || 3000;
-server.listen(port, () => {
+console.log('Starting server...');
+console.log('Environment:', process.env.NODE_ENV);
+console.log('Port:', port);
+
+server.listen(port, '0.0.0.0', () => {
   console.log(`Server is running on port ${port}`);
+  console.log('Server successfully started');
+});
+
+// Error handling for the server
+server.on('error', (error) => {
+  console.error('Server error:', error);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
 });
