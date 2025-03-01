@@ -1073,6 +1073,16 @@ function checkSequence(startRow, startCol, deltaRow, deltaCol, playerColor) {
         
         const cell = gameState.board[row][col];
         
+        // First check if this position is already part of any existing sequence
+        const isInExistingSequence = gameState.sequences.some(sequence =>
+            sequence.positions.some(pos => pos.row === row && pos.col === col)
+        );
+        
+        // Skip this position if it's already part of a sequence
+        if (isInExistingSequence) {
+            return null;
+        }
+        
         // Check if cell has player's token or is a free corner
         if (cell.type === 'free' || cell.token === playerColor) {
             positions.push({row, col});
