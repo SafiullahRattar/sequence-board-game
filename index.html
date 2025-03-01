@@ -277,6 +277,21 @@
             z-index: 5;
         }
         
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: var(--primary-color);
+            animation: spin 1s ease-in-out infinite;
+            margin-left: 10px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
         @media (max-width: 768px) {
             .board {
                 grid-template-columns: repeat(10, 35px);
@@ -339,7 +354,7 @@
                     <button id="copyLink">Copy</button>
                 </div>
                 <p>Game Code: <span id="gameCode"></span></p>
-                <p>Waiting for player to join...</p>
+                <p>Waiting for player to join... <span class="loading"></span></p>
             </div>
         </div>
         
@@ -409,6 +424,7 @@
         </div>
     </div>
     
+    <script src="websocket.js"></script>
     <script>
         // Game Constants
         const SUITS = ['♥', '♦', '♠', '♣'];
@@ -480,6 +496,7 @@
         
         // Create the game board
         function createGameBoard() {
+            gameBoard.innerHTML = '';
             for (let row = 0; row < 10; row++) {
                 for (let col = 0; col < 10; col++) {
                     const cell = document.createElement('div');
@@ -577,157 +594,154 @@
         function createNewGame() {
             const username = document.getElementById('username').value || 'Player 1';
             const sequencesToWin = parseInt(document.getElementById('sequences').value);
-            const firstPlayer = document.getElementById('firstPlayer').value;
+            const firstPlayer = document.getElementById('firstPlayer').value === 'host' ? 0 : 1;
             
-            // Generate a random game ID
-            const gameId = Math.random().toString(36).substring(2, 8).toUpperCase();
+            // Initialize websocket
+            const socket = new GameWebSocket();
+            socket.connect();
             
             // Set up game state
-            gameState.players[0].name = username;
-            gameState.sequencesToWin = sequencesToWin;
-            gameState.currentPlayer = firstPlayer === 'host' ? 0 : 1;
-            gameState.gameId = gameId;
-            gameState.isHost = true;
+            gameState = {
+                board: initializeBoard(),
+                deck: createAndShuffleDeck(),
+                players: [
+                    { name: username, hand: [], color: 'blue', sequences: 0 },
+                    { name: 'Player 2', hand: [], color: 'green', sequences: 0 }
+                ],
+                currentPlayer: firstPlayer,
+                sequencesToWin: sequencesToWin,
+                selectedCard: null,
+                sequences: [],
+                isHost: true
+            };
             
-            // Show game link
-            gameLink.value = `${window.location.href.split('?')[0]}?game=${gameId}`;
-            gameCode.textContent = gameId;
-            createGameButton.style.display = 'none';
+            // Deal cards to players
+            dealCards();
+            
+            // Set up WebSocket callbacks
+            socket.onGameState = updateGameFromServer;
+            socket.onPlayerJoined = handlePlayerJoin;
+            socket.onPlayerMove = updateGameFromServer;
+            socket.onPlayerDisconnected = handlePlayerDisconnect;
+            
+            // Send initial game state to server
+            socket.createGame(gameState);
+            
+            // Show link box
+            createGameButton.disabled = true;
+            createGameButton.textContent = 'Game Created';
             linkBox.style.display = 'block';
-            
-            // Start checking for player to join
-            checkForPlayer();
         }
         
         // Join an existing game
         function joinExistingGame() {
             const username = document.getElementById('username').value || 'Player 2';
-            const gameCodeValue = document.getElementById('joinCode').value.toUpperCase();
+            const gameCodeValue = document.getElementById('joinCode').value.trim().toUpperCase();
             
             if (!gameCodeValue) {
-                showNotification('Please enter a game code');
+                showNotification('Please enter a valid game code');
                 return;
             }
             
-            // Simulate joining a game
-            setTimeout(() => {
-                gameState.players[0].name = 'Opponent';
-                gameState.players[1].name = username;
-                gameState.isHost = false;
-                gameState.gameId = gameCodeValue;
-                
-                // Random values for the opponent's settings
-                gameState.sequencesToWin = 2;
-                
-                startGame();
-            }, 1500);
+            // Initialize websocket
+            const socket = new GameWebSocket();
+            socket.connect();
+            
+            // Set up WebSocket callbacks
+            socket.onGameState = updateGameFromServer;
+            socket.onPlayerMove = updateGameFromServer;
+            socket.onPlayerDisconnected = handlePlayerDisconnect;
+            
+            // Join game
+            socket.joinGame(gameCodeValue);
+            
+            // Update UI
+            joinGameButton.disabled = true;
+            joinGameButton.textContent = 'Joining...';
+            
+            // Update state
+            gameState.isHost = false;
         }
         
-        // Check for player to join (simulation)
-        function checkForPlayer() {
-            // Simulate a player joining after 5 seconds
-            setTimeout(() => {
-                gameState.players[1].name = 'Guest Player';
-                startGame();
-            }, 5000);
+        // Handle player joining
+        function handlePlayerJoin(updatedGameState) {
+            showNotification('Player 2 joined the game!');
+            updateGameFromServer(updatedGameState);
         }
         
-        // Start the game
-        function startGame() {
+        // Handle player disconnect
+        function handlePlayerDisconnect() {
+            showNotification('Other player disconnected');
+        }
+        
+        // Update game from server
+        function updateGameFromServer(newGameState) {
+            gameState = {...newGameState};
+            
+            // If this is first update with game ID, update URL and link
+            if (gameState.gameId && !window.location.href.includes('game=')) {
+                const gameUrl = `${window.location.origin}${window.location.pathname}?game=${gameState.gameId}`;
+                window.history.pushState({}, '', gameUrl);
+                gameLink.value = gameUrl;
+                gameCode.textContent = gameState.gameId;
+            }
+            
+            // Switch to game screen
             setupScreen.style.display = 'none';
             gameScreen.style.display = 'block';
             
-            // Update player names
-            player1Element.textContent = gameState.isHost ? 
-                `${gameState.players[0].name} (You)` : gameState.players[0].name;
-            player2Element.textContent = gameState.isHost ? 
-                gameState.players[1].name : `${gameState.players[1].name} (You)`;
-            
-            // Set active player
-            updateActivePlayer();
-            
-            // Initialize the game
-            initializeGameState();
-            renderGame();
-            
-            showNotification('Game started! ' + 
-                (gameState.currentPlayer === (gameState.isHost ? 0 : 1) ? 
-                'Your turn!' : 'Waiting for opponent...'));
+            // Update UI
+            updateGameBoard();
+            updatePlayerInfo();
+            updatePlayerHand();
         }
         
-        // Initialize game state
-        function initializeGameState() {
-            // Create and shuffle the deck
-            gameState.deck = createDeck();
-            shuffleDeck(gameState.deck);
-            
-            // Deal cards to players
-            dealCards();
-            
-            // Initialize board state
-            initializeBoardState();
+        // Initialize the board
+        function initializeBoard() {
+            const board = [];
+            for (let row = 0; row < 10; row++) {
+                board[row] = [];
+                for (let col = 0; col < 10; col++) {
+                    const cardCode = boardLayout[row][col];
+                    if (cardCode === 'F') {
+                        board[row][col] = { type: 'free', token: null };
+                    } else if (cardCode !== 'X') {
+                        board[row][col] = { type: 'card', code: cardCode, token: null };
+                    } else {
+                        board[row][col] = { type: 'empty', token: null };
+                    }
+                }
+            }
+            return board;
         }
         
-        // Create a standard deck of cards
-        function createDeck() {
+        // Create and shuffle deck
+        function createAndShuffleDeck() {
             const deck = [];
             
-            // Two of each card
+            // Add regular cards (2 of each)
             for (let i = 0; i < 2; i++) {
-                for (const value of VALUES) {
-                    for (const suit of SUITS) {
+                for (const suit of SUITS) {
+                    for (const value of VALUES) {
                         deck.push(value + suit);
                     }
                 }
             }
             
-            return deck;
-        }
-        
-        // Shuffle the deck
-        function shuffleDeck(deck) {
+            // Shuffle deck
             for (let i = deck.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [deck[i], deck[j]] = [deck[j], deck[i]];
             }
+            
+            return deck;
         }
         
         // Deal cards to players
-        function dealCards() {
-            for (let i = 0; i < 7; i++) {
-                for (let player = 0; player < 2; player++) {
-                    if (gameState.deck.length > 0) {
-                        gameState.players[player].hand.push(gameState.deck.pop());
-                    }
-                }
-            }
-        }
-        
-        // Initialize board state
-        function initializeBoardState() {
-            gameState.board = [];
-            
-            for (let row = 0; row < 10; row++) {
-                gameState.board[row] = [];
-                for (let col = 0; col < 10; col++) {
-                    const cardCode = boardLayout[row][col];
-                    
-                    if (cardCode === 'F') {
-                        // Free corner
-                        gameState.board[row][col] = { 
-                            card: 'FREE', 
-                            token: null, 
-                            isFree: true 
-                        };
-                    } else if (cardCode !== 'X') {
-                        gameState.board[row][col] = { 
-                            card: cardCode, 
-                            token: null, 
-                            isFree: false 
-                        };
-                    } else {
-                        gameState.board[row][col] = null;
-                    }
+        function dealCards(handSize = 7) {
+            for (let i = 0; i < gameState.players.length; i++) {
+                while (gameState.players[i].hand.length < handSize && gameState.deck.length > 0) {
+                    gameState.players[i].hand.push(gameState.deck.pop());
                 }
             }
         }
@@ -737,112 +751,137 @@
             const cell = e.target.closest('.cell');
             if (!cell) return;
             
-            const row = parseInt(cell.dataset.row);
-            const col = parseInt(cell.dataset.col);
-            
             // Check if it's the player's turn
             const playerIndex = gameState.isHost ? 0 : 1;
             if (gameState.currentPlayer !== playerIndex) {
-                showNotification("It's not your turn!");
+                showNotification("It's not your turn");
                 return;
             }
+            
+            const row = parseInt(cell.dataset.row);
+            const col = parseInt(cell.dataset.col);
             
             // Check if a card is selected
             if (gameState.selectedCard === null) {
-                showNotification("Please select a card first!");
+                showNotification('Select a card from your hand first');
                 return;
             }
             
-            // Make the move
-            makeMove(row, col);
+            const selectedCard = gameState.players[playerIndex].hand[gameState.selectedCard];
+            
+            // Check if special Jack
+            if (SPECIAL_JACKS[selectedCard]) {
+                handleJackPlacement(row, col, selectedCard);
+            } else {
+                // Regular card placement
+                handleRegularPlacement(row, col, selectedCard);
+            }
         }
         
-        // Make a move
-        function makeMove(row, col) {
-            const cardValue = gameState.selectedCard;
+        // Handle jack placement
+        function handleJackPlacement(row, col, selectedCard) {
             const playerIndex = gameState.isHost ? 0 : 1;
+            const opponentIndex = playerIndex === 0 ? 1 : 0;
             
-            // Check if special jack
-            if (SPECIAL_JACKS[cardValue]) {
-                if (SPECIAL_JACKS[cardValue] === 'one-eyed') {
-                    // One-eyed jack - remove opponent token
-                    if (!gameState.board[row][col] || 
-                        !gameState.board[row][col].token || 
-                        gameState.board[row][col].token === gameState.players[playerIndex].color ||
-                        isPartOfSequence(row, col)) {
-                        showNotification("Invalid move for One-eyed Jack!");
+            if (SPECIAL_JACKS[selectedCard] === 'one-eyed') {
+                // One-eyed jack (remove opponent's token)
+                if (row < 0 || row >= 10 || col < 0 || col >= 10) return;
+                
+                const cell = gameState.board[row][col];
+                if (!cell || cell.type === 'free') return;
+                
+                // Check if token exists and belongs to opponent
+                if (cell.token === gameState.players[opponentIndex].color) {
+                    // Check if token is part of a sequence
+                    const isPartOfSequence = isTokenInSequence(row, col);
+                    if (isPartOfSequence) {
+                        showNotification("Can't remove a token that's part of a sequence");
                         return;
                     }
                     
                     // Remove token
                     gameState.board[row][col].token = null;
-                } else {
-                    // Two-eyed jack - place anywhere
-                    if (!gameState.board[row][col] || 
-                        gameState.board[row][col].token || 
-                        gameState.board[row][col].isFree) {
-                        showNotification("Invalid move for Two-eyed Jack!");
-                        return;
-                    }
-                    
+                    playCard(gameState.selectedCard);
+                }
+                else {
+                    showNotification("One-eyed jack can only remove opponent's tokens");
+                }
+            } else if (SPECIAL_JACKS[selectedCard] === 'two-eyed') {
+                // Two-eyed jack (place token anywhere)
+                if (row < 0 || row >= 10 || col < 0 || col >= 10) return;
+                
+                const cell = gameState.board[row][col];
+                if (!cell || cell.type === 'free') return;
+                
+                if (cell.token === null) {
                     // Place token
                     gameState.board[row][col].token = gameState.players[playerIndex].color;
+                    playCard(gameState.selectedCard);
+                    checkForSequences();
                 }
-            } else {
-                // Regular card - must match board position
-                if (!gameState.board[row][col] || 
-                    gameState.board[row][col].card !== cardValue || 
-                    gameState.board[row][col].token) {
-                    showNotification("Invalid move!");
-                    return;
+                else {
+                    showNotification("Can't place on an occupied space");
                 }
-                
+            }
+        }
+        
+        // Handle regular card placement
+        function handleRegularPlacement(row, col, selectedCard) {
+            const playerIndex = gameState.isHost ? 0 : 1;
+            
+            if (row < 0 || row >= 10 || col < 0 || col >= 10) return;
+            
+            const cell = gameState.board[row][col];
+            if (!cell) return;
+            
+            if (cell.type === 'card' && cell.code === selectedCard && cell.token === null) {
                 // Place token
                 gameState.board[row][col].token = gameState.players[playerIndex].color;
+                playCard(gameState.selectedCard);
+                checkForSequences();
             }
-            
-            // Remove the played card from hand
-            const cardIndex = gameState.players[playerIndex].hand.indexOf(cardValue);
-            if (cardIndex !== -1) {
-                gameState.players[playerIndex].hand.splice(cardIndex, 1);
+            else if (cell.token !== null) {
+                showNotification('Space already occupied');
             }
+            else if (cell.type === 'card' && cell.code !== selectedCard) {
+                showNotification('Card doesn\'t match this space');
+            }
+        }
+        
+        // Play a card from hand
+        function playCard(cardIndex) {
+            const playerIndex = gameState.isHost ? 0 : 1;
             
-            // Draw a new card
+            // Remove card from hand
+            const playedCard = gameState.players[playerIndex].hand.splice(cardIndex, 1)[0];
+            
+            // Draw new card if available
             if (gameState.deck.length > 0) {
                 gameState.players[playerIndex].hand.push(gameState.deck.pop());
             }
             
-            // Clear selected card
+            // Reset selected card
             gameState.selectedCard = null;
             
-            // Check for sequences
-            checkForSequences();
+            // Switch to other player
+            gameState.currentPlayer = gameState.currentPlayer === 0 ? 1 : 0;
             
-            // Check for win
-            if (checkForWin()) {
-                showNotification(`${gameState.players[playerIndex].name} wins!`);
-                setTimeout(() => {
-                    alert(`${gameState.players[playerIndex].name} wins the game!`);
-                    window.location.reload();
-                }, 1000);
-                return;
-            }
+            // Update UI
+            updateGameBoard();
+            updatePlayerInfo();
+            updatePlayerHand();
             
-            // Switch players
-            gameState.currentPlayer = 1 - gameState.currentPlayer;
-            
-            // Re-render
-            renderGame();
-            
-            // If it's AI's turn
-            simulateOpponentTurn();
+            // Send updated state to server
+            const webSocket = new GameWebSocket();
+            webSocket.connect();
+            webSocket.sendMove(gameState);
         }
         
-        // Check if a position is part of a sequence
-        function isPartOfSequence(row, col) {
-            for (const seq of gameState.sequences) {
-                for (const pos of seq.positions) {
-                    if (pos.row === row && pos.col === col) {
+        // Check if a token is part of a sequence
+        function isTokenInSequence(row, col) {
+            for (const sequence of gameState.sequences) {
+                for (const position of sequence.positions) {
+                    if (position.row === row && position.col === col) {
                         return true;
                     }
                 }
@@ -850,554 +889,241 @@
             return false;
         }
         
-// Continue from where the code left off...
-
-// Check for sequences
-function checkForSequences() {
-    const newSequences = [];
-    const playerIndex = gameState.currentPlayer;
-    const playerColor = gameState.players[playerIndex].color;
-    
-    // Check horizontal sequences
-    for (let row = 0; row < 10; row++) {
-        for (let col = 0; col < 6; col++) {
-            const positions = [];
-            let valid = true;
+        // Check for sequences
+        function checkForSequences() {
+            const playerIndex = gameState.isHost ? 0 : 1;
+            const playerColor = gameState.players[playerIndex].color;
             
-            for (let i = 0; i < 5; i++) {
-                const cell = gameState.board[row][col + i];
-                if (!cell || cell.token !== playerColor && !cell.isFree) {
-                    valid = false;
-                    break;
-                }
-                
-                positions.push({ row, col: col + i });
-            }
+            // Define directions for sequence checking (horizontal, vertical, diagonal)
+            const directions = [
+                {dr: 0, dc: 1},  // horizontal
+                {dr: 1, dc: 0},  // vertical
+                {dr: 1, dc: 1},  // diagonal down-right
+                {dr: 1, dc: -1}, // diagonal down-left
+            ];
             
-            if (valid) {
-                // Check if this sequence overlaps with existing ones
-                let isNew = true;
-                for (const seq of gameState.sequences) {
-                    if (seq.color === playerColor && seq.direction === 'horizontal') {
-                        let overlapCount = 0;
-                        for (const pos of positions) {
-                            for (const existingPos of seq.positions) {
-                                if (pos.row === existingPos.row && pos.col === existingPos.col) {
-                                    overlapCount++;
+            const newSequences = [];
+            
+            // Check for 5 in a row
+            for (let row = 0; row < 10; row++) {
+                for (let col = 0; col < 10; col++) {
+                    for (const dir of directions) {
+                        const sequence = checkSequence(row, col, dir.dr, dir.dc, playerColor);
+                        if (sequence) {
+                            // Check if this sequence overlaps with existing sequences
+                            let isNew = true;
+                            for (const existingSeq of gameState.sequences) {
+                                if (sequencesOverlap(sequence, existingSeq)) {
+                                    isNew = false;
+                                    break;
                                 }
                             }
-                        }
-                        
-                        // If there's significant overlap, it's not a new sequence
-                        if (overlapCount >= 4) {
-                            isNew = false;
-                            break;
+                            
+                            if (isNew) {
+                                newSequences.push(sequence);
+                            }
                         }
                     }
                 }
+            }
+            
+            // Add new sequences and update player's sequence count
+            if (newSequences.length > 0) {
+                gameState.sequences = [...gameState.sequences, ...newSequences];
+                gameState.players[playerIndex].sequences += newSequences.length;
                 
-                if (isNew) {
-                    newSequences.push({
-                        color: playerColor,
-                        direction: 'horizontal',
-                        positions: positions
-                    });
+                // Check win condition
+                if (gameState.players[playerIndex].sequences >= gameState.sequencesToWin) {
+                    setTimeout(() => {
+                        showNotification(`${gameState.players[playerIndex].name} wins the game!`);
+                    }, 500);
                 }
             }
         }
-    }
-    
-    // Check vertical sequences
-    for (let row = 0; row < 6; row++) {
-        for (let col = 0; col < 10; col++) {
+        
+        // Check for a sequence from a starting position
+        function checkSequence(startRow, startCol, deltaRow, deltaCol, playerColor) {
             const positions = [];
-            let valid = true;
+            let count = 0;
             
             for (let i = 0; i < 5; i++) {
-                const cell = gameState.board[row + i][col];
-                if (!cell || cell.token !== playerColor && !cell.isFree) {
-                    valid = false;
-                    break;
+                const row = startRow + (i * deltaRow);
+                const col = startCol + (i * deltaCol);
+                
+                // Check bounds
+                if (row < 0 || row >= 10 || col < 0 || col >= 10) {
+                    return null;
                 }
                 
-                positions.push({ row: row + i, col });
-            }
-            
-            if (valid) {
-                // Check if this sequence overlaps with existing ones
-                let isNew = true;
-                for (const seq of gameState.sequences) {
-                    if (seq.color === playerColor && seq.direction === 'vertical') {
-                        let overlapCount = 0;
-                        for (const pos of positions) {
-                            for (const existingPos of seq.positions) {
-                                if (pos.row === existingPos.row && pos.col === existingPos.col) {
-                                    overlapCount++;
-                                }
-                            }
-                        }
-                        
-                        // If there's significant overlap, it's not a new sequence
-                        if (overlapCount >= 4) {
-                            isNew = false;
-                            break;
-                        }
-                    }
-                }
-                
-                if (isNew) {
-                    newSequences.push({
-                        color: playerColor,
-                        direction: 'vertical',
-                        positions: positions
-                    });
-                }
-            }
-        }
-    }
-    
-    // Check diagonal sequences (top-left to bottom-right)
-    for (let row = 0; row < 6; row++) {
-        for (let col = 0; col < 6; col++) {
-            const positions = [];
-            let valid = true;
-            
-            for (let i = 0; i < 5; i++) {
-                const cell = gameState.board[row + i][col + i];
-                if (!cell || cell.token !== playerColor && !cell.isFree) {
-                    valid = false;
-                    break;
-                }
-                
-                positions.push({ row: row + i, col: col + i });
-            }
-            
-            if (valid) {
-                // Check if this sequence overlaps with existing ones
-                let isNew = true;
-                for (const seq of gameState.sequences) {
-                    if (seq.color === playerColor && seq.direction === 'diagonal-right') {
-                        let overlapCount = 0;
-                        for (const pos of positions) {
-                            for (const existingPos of seq.positions) {
-                                if (pos.row === existingPos.row && pos.col === existingPos.col) {
-                                    overlapCount++;
-                                }
-                            }
-                        }
-                        
-                        // If there's significant overlap, it's not a new sequence
-                        if (overlapCount >= 4) {
-                            isNew = false;
-                            break;
-                        }
-                    }
-                }
-                
-                if (isNew) {
-                    newSequences.push({
-                        color: playerColor,
-                        direction: 'diagonal-right',
-                        positions: positions
-                    });
-                }
-            }
-        }
-    }
-    
-    // Check diagonal sequences (top-right to bottom-left)
-    for (let row = 0; row < 6; row++) {
-        for (let col = 4; col < 10; col++) {
-            const positions = [];
-            let valid = true;
-            
-            for (let i = 0; i < 5; i++) {
-                const cell = gameState.board[row + i][col - i];
-                if (!cell || cell.token !== playerColor && !cell.isFree) {
-                    valid = false;
-                    break;
-                }
-                
-                positions.push({ row: row + i, col: col - i });
-            }
-            
-            if (valid) {
-                // Check if this sequence overlaps with existing ones
-                let isNew = true;
-                for (const seq of gameState.sequences) {
-                    if (seq.color === playerColor && seq.direction === 'diagonal-left') {
-                        let overlapCount = 0;
-                        for (const pos of positions) {
-                            for (const existingPos of seq.positions) {
-                                if (pos.row === existingPos.row && pos.col === existingPos.col) {
-                                    overlapCount++;
-                                }
-                            }
-                        }
-                        
-                        // If there's significant overlap, it's not a new sequence
-                        if (overlapCount >= 4) {
-                            isNew = false;
-                            break;
-                        }
-                    }
-                }
-                
-                if (isNew) {
-                    newSequences.push({
-                        color: playerColor,
-                        direction: 'diagonal-left',
-                        positions: positions
-                    });
-                }
-            }
-        }
-    }
-    
-    // Add new sequences to the game state
-    if (newSequences.length > 0) {
-        for (const seq of newSequences) {
-            gameState.sequences.push(seq);
-            gameState.players[playerIndex].sequences++;
-            
-            // Mark sequence on the board
-            for (const pos of seq.positions) {
-                const cellElement = document.querySelector(`.cell[data-row="${pos.row}"][data-col="${pos.col}"]`);
-                if (cellElement && !cellElement.querySelector('.sequence')) {
-                    const sequenceMarker = document.createElement('div');
-                    sequenceMarker.className = 'sequence';
-                    sequenceMarker.innerHTML = '★';
-                    cellElement.appendChild(sequenceMarker);
-                }
-            }
-        }
-        
-        // Update sequence counter
-        updateSequenceCounter();
-    }
-}
-
-// Check for win
-function checkForWin() {
-    const playerIndex = gameState.currentPlayer;
-    return gameState.players[playerIndex].sequences >= gameState.sequencesToWin;
-}
-
-// Update sequence counter
-function updateSequenceCounter() {
-    const playerIndex = gameState.isHost ? 0 : 1;
-    sequenceCounter.textContent = `${gameState.players[playerIndex].sequences}/${gameState.sequencesToWin}`;
-}
-
-// Update active player indicator
-function updateActivePlayer() {
-    const isPlayerTurn = gameState.currentPlayer === (gameState.isHost ? 0 : 1);
-    player1Element.classList.toggle('active', gameState.isHost ? isPlayerTurn : !isPlayerTurn);
-    player2Element.classList.toggle('active', gameState.isHost ? !isPlayerTurn : isPlayerTurn);
-}
-
-// Render the game state
-function renderGame() {
-    renderBoard();
-    renderHand();
-    updateSelectedCard();
-    updateActivePlayer();
-}
-
-// Render the board
-function renderBoard() {
-    // Clear existing tokens
-    const tokens = document.querySelectorAll('.token');
-    tokens.forEach(token => token.remove());
-    
-    // Render current board state
-    for (let row = 0; row < 10; row++) {
-        for (let col = 0; col < 10; col++) {
-            const cell = gameState.board[row][col];
-            if (cell && cell.token) {
-                const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
-                
-                if (cellElement) {
-                    const token = document.createElement('div');
-                    token.className = `token ${cell.token}`;
-                    cellElement.appendChild(token);
-                }
-            }
-        }
-    }
-}
-
-// Render player's hand
-function renderHand() {
-    playerHand.innerHTML = '';
-    
-    const playerIndex = gameState.isHost ? 0 : 1;
-    const hand = gameState.players[playerIndex].hand;
-    
-    hand.forEach(card => {
-        const cardElement = document.createElement('div');
-        cardElement.className = 'card';
-        if (card === gameState.selectedCard) {
-            cardElement.classList.add('selected');
-        }
-        
-        const value = card.slice(0, -1);
-        const suit = card.slice(-1);
-        const isRed = suit === '♥' || suit === '♦';
-        
-        const cardValue = document.createElement('span');
-        cardValue.textContent = value;
-        if (isRed) cardValue.classList.add('red');
-        
-        const cardSuitTop = document.createElement('span');
-        cardSuitTop.textContent = suit;
-        cardSuitTop.className = 'card-suit top';
-        if (isRed) cardSuitTop.classList.add('red');
-        
-        const cardSuitBottom = document.createElement('span');
-        cardSuitBottom.textContent = suit;
-        cardSuitBottom.className = 'card-suit bottom';
-        if (isRed) cardSuitBottom.classList.add('red');
-        
-        cardElement.appendChild(cardValue);
-        cardElement.appendChild(cardSuitTop);
-        cardElement.appendChild(cardSuitBottom);
-        
-        cardElement.addEventListener('click', () => {
-            // Select or deselect card
-            if (gameState.selectedCard === card) {
-                gameState.selectedCard = null;
-            } else {
-                gameState.selectedCard = card;
-            }
-            updateSelectedCard();
-            renderHand();
-        });
-        
-        playerHand.appendChild(cardElement);
-    });
-}
-
-// Update selected card display
-function updateSelectedCard() {
-    selectedCardElement.textContent = gameState.selectedCard || 'None';
-}
-
-// Show notification
-function showNotification(message) {
-    notification.textContent = message;
-    notification.style.display = 'block';
-    
-    // Hide after 3 seconds
-    setTimeout(() => {
-        notification.style.display = 'none';
-    }, 3000);
-}
-
-// Simulate opponent turn (for testing/demo)
-function simulateOpponentTurn() {
-    const opponentIndex = gameState.isHost ? 1 : 0;
-    
-    // If it's the opponent's turn
-    if (gameState.currentPlayer === opponentIndex) {
-        // Add a small delay to simulate thinking
-        setTimeout(() => {
-            // Find a valid move
-            makeRandomOpponentMove();
-        }, 1500);
-    }
-}
-
-// Make a random opponent move (for testing/demo)
-function makeRandomOpponentMove() {
-    const opponentIndex = gameState.isHost ? 1 : 0;
-    const hand = gameState.players[opponentIndex].hand;
-    
-    if (hand.length === 0) return;
-    
-    // Try to make a valid move
-    let moveMade = false;
-    
-    // First try with normal cards
-    for (const card of hand) {
-        if (SPECIAL_JACKS[card]) continue; // Skip jacks for now
-        
-        // Find matching cells on board
-        for (let row = 0; row < 10; row++) {
-            for (let col = 0; col < 10; col++) {
                 const cell = gameState.board[row][col];
-                if (cell && cell.card === card && !cell.token) {
-                    // Found a valid move
-                    gameState.selectedCard = card;
-                    makeOpponentMove(row, col);
-                    moveMade = true;
-                    return;
-                }
-            }
-        }
-    }
-    
-    // If no normal move, try one-eyed jacks
-    if (!moveMade) {
-        for (const card of hand) {
-            if (SPECIAL_JACKS[card] === 'one-eyed') {
-                // Look for opponent tokens not in a sequence
-                const playerIndex = gameState.isHost ? 0 : 1;
-                const playerColor = gameState.players[playerIndex].color;
                 
-                for (let row = 0; row < 10; row++) {
-                    for (let col = 0; col < 10; col++) {
-                        const cell = gameState.board[row][col];
-                        if (cell && cell.token === playerColor && !isPartOfSequence(row, col)) {
-                            // Found a valid move
-                            gameState.selectedCard = card;
-                            makeOpponentMove(row, col);
-                            moveMade = true;
-                            return;
+                // Count if cell has player's token or is a free corner
+                if ((cell.token === playerColor) || (cell.type === 'free')) {
+                    positions.push({row, col});
+                    count++;
+                } else {
+                    return null;
+                }
+            }
+            
+            if (count === 5) {
+                return {
+                    player: playerColor,
+                    positions: positions
+                };
+            }
+            
+            return null;
+        }
+        
+        // Check if two sequences overlap
+        function sequencesOverlap(seq1, seq2) {
+            // Different players can't overlap
+            if (seq1.player !== seq2.player) {
+                return false;
+            }
+            
+            // Check for position overlap
+            let overlapCount = 0;
+            for (const pos1 of seq1.positions) {
+                for (const pos2 of seq2.positions) {
+                    if (pos1.row === pos2.row && pos1.col === pos2.col) {
+                        overlapCount++;
+                    }
+                }
+            }
+            
+            // If more than 3 positions overlap, consider it overlapping
+            return overlapCount >= 3;
+        }
+        
+        // Update the game board UI
+        function updateGameBoard() {
+            // Clear all tokens
+            const cells = document.querySelectorAll('.cell');
+            cells.forEach(cell => {
+                const tokenElements = cell.querySelectorAll('.token');
+                tokenElements.forEach(token => token.remove());
+                
+                const sequenceElements = cell.querySelectorAll('.sequence');
+                sequenceElements.forEach(seq => seq.remove());
+            });
+            
+            // Add tokens based on game state
+            for (let row = 0; row < 10; row++) {
+                for (let col = 0; col < 10; col++) {
+                    if (gameState.board[row][col].token) {
+                        const cellElement = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+                        if (cellElement) {
+                            const token = document.createElement('div');
+                            token.className = `token ${gameState.board[row][col].token}`;
+                            cellElement.appendChild(token);
                         }
                     }
                 }
             }
-        }
-    }
-    
-    // If no normal or one-eyed jack move, try two-eyed jacks
-    if (!moveMade) {
-        for (const card of hand) {
-            if (SPECIAL_JACKS[card] === 'two-eyed') {
-                // Look for any empty cell
-                for (let row = 0; row < 10; row++) {
-                    for (let col = 0; col < 10; col++) {
-                        const cell = gameState.board[row][col];
-                        if (cell && !cell.token && !cell.isFree) {
-                            // Found a valid move
-                            gameState.selectedCard = card;
-                            makeOpponentMove(row, col);
-                            moveMade = true;
-                            return;
-                        }
+            
+            // Mark sequences
+            gameState.sequences.forEach(sequence => {
+                sequence.positions.forEach(position => {
+                    const cellElement = document.querySelector(`.cell[data-row="${position.row}"][data-col="${position.col}"]`);
+                    if (cellElement && !cellElement.querySelector('.sequence')) {
+                        const sequenceMark = document.createElement('div');
+                        sequenceMark.className = 'sequence';
+                        sequenceMark.textContent = '★';
+                        cellElement.appendChild(sequenceMark);
                     }
-                }
+                });
+            });
+        }
+        
+        // Update player info UI
+        function updatePlayerInfo() {
+            const playerIndex = gameState.isHost ? 0 : 1;
+            const opponentIndex = playerIndex === 0 ? 1 : 0;
+            
+            player1Element.textContent = gameState.isHost ? 
+                `${gameState.players[0].name} (You)` : 
+                `${gameState.players[0].name}`;
+                
+            player2Element.textContent = !gameState.isHost ? 
+                `${gameState.players[1].name} (You)` : 
+                `${gameState.players[1].name}`;
+            
+            // Update active class
+            player1Element.className = gameState.currentPlayer === 0 ? 'active' : '';
+            player2Element.className = gameState.currentPlayer === 1 ? 'active' : '';
+            
+            // Update sequence counter
+            sequenceCounter.textContent = `${gameState.players[playerIndex].sequences}/${gameState.sequencesToWin}`;
+            
+            // Update selected card
+            if (gameState.selectedCard !== null) {
+                selectedCardElement.textContent = gameState.players[playerIndex].hand[gameState.selectedCard];
+            } else {
+                selectedCardElement.textContent = 'None';
             }
         }
-    }
-    
-    // If still no move, just play the first card on a random valid cell
-    if (!moveMade && hand.length > 0) {
-        const card = hand[0];
-        gameState.selectedCard = card;
         
-        // For simplicity, just discard the card and draw a new one
-        const cardIndex = gameState.players[opponentIndex].hand.indexOf(card);
-        if (cardIndex !== -1) {
-            gameState.players[opponentIndex].hand.splice(cardIndex, 1);
+        // Update player hand UI
+        function updatePlayerHand() {
+            const playerIndex = gameState.isHost ? 0 : 1;
+            playerHand.innerHTML = '';
+            
+            gameState.players[playerIndex].hand.forEach((card, index) => {
+                const cardElement = document.createElement('div');
+                cardElement.className = 'card';
+                if (gameState.selectedCard === index) {
+                    cardElement.classList.add('selected');
+                }
+                
+                const isRed = card.includes('♥') || card.includes('♦');
+                
+                const value = card.slice(0, -1);
+                const suit = card.slice(-1);
+                
+                const cardValue = document.createElement('span');
+                cardValue.textContent = value;
+                if (isRed) cardValue.classList.add('red');
+                
+                const cardSuitTop = document.createElement('span');
+                cardSuitTop.textContent = suit;
+                cardSuitTop.className = 'card-suit top';
+                if (isRed) cardSuitTop.classList.add('red');
+                
+                const cardSuitBottom = document.createElement('span');
+                cardSuitBottom.textContent = suit;
+                cardSuitBottom.className = 'card-suit bottom';
+                if (isRed) cardSuitBottom.classList.add('red');
+                
+                cardElement.appendChild(cardValue);
+                cardElement.appendChild(cardSuitTop);
+                cardElement.appendChild(cardSuitBottom);
+                
+                cardElement.addEventListener('click', () => {
+                    if (gameState.currentPlayer === playerIndex) {
+                        gameState.selectedCard = index;
+                        updatePlayerHand();
+                        updatePlayerInfo();
+                    }
+                });
+                
+                playerHand.appendChild(cardElement);
+            });
         }
         
-        // Draw a new card
-        if (gameState.deck.length > 0) {
-            gameState.players[opponentIndex].hand.push(gameState.deck.pop());
+        // Show notification
+        function showNotification(message) {
+            notification.textContent = message;
+            notification.style.display = 'block';
+            
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
         }
         
-        // Switch players
-        gameState.currentPlayer = 1 - gameState.currentPlayer;
-        renderGame();
-    }
-}
-
-// Make opponent move
-function makeOpponentMove(row, col) {
-    const cardValue = gameState.selectedCard;
-    const opponentIndex = gameState.isHost ? 1 : 0;
-    
-    // Check if special jack
-    if (SPECIAL_JACKS[cardValue]) {
-        if (SPECIAL_JACKS[cardValue] === 'one-eyed') {
-            // Remove player token
-            gameState.board[row][col].token = null;
-        } else {
-            // Place token
-            gameState.board[row][col].token = gameState.players[opponentIndex].color;
-        }
-    } else {
-        // Place token
-        gameState.board[row][col].token = gameState.players[opponentIndex].color;
-    }
-    
-    // Remove the played card from hand
-    const cardIndex = gameState.players[opponentIndex].hand.indexOf(cardValue);
-    if (cardIndex !== -1) {
-        gameState.players[opponentIndex].hand.splice(cardIndex, 1);
-    }
-    
-    // Draw a new card
-    if (gameState.deck.length > 0) {
-        gameState.players[opponentIndex].hand.push(gameState.deck.pop());
-    }
-    
-    // Clear selected card
-    gameState.selectedCard = null;
-    
-    // Check for sequences
-    checkForSequences();
-    
-    // Check for win
-    if (checkForWin()) {
-        showNotification(`${gameState.players[opponentIndex].name} wins!`);
-        setTimeout(() => {
-            alert(`${gameState.players[opponentIndex].name} wins the game!`);
-            window.location.reload();
-        }, 1000);
-        return;
-    }
-    
-    // Switch players
-    gameState.currentPlayer = 1 - gameState.currentPlayer;
-    
-    // Re-render
-    renderGame();
-    
-    showNotification("Your turn!");
-}
-
-// WebSocket Connection (simulated for this example)
-class WebSocketSimulation {
-    constructor(gameId) {
-        this.gameId = gameId;
-        this.isConnected = false;
-        this.onMessage = null;
-        this.onClose = null;
-        this.onOpen = null;
-        
-        // Simulate connection delay
-        setTimeout(() => {
-            this.isConnected = true;
-            if (this.onOpen) this.onOpen();
-        }, 1000);
-    }
-    
-    send(message) {
-        console.log('Message sent:', message);
-        // In a real implementation, this would send to the server
-    }
-    
-    close() {
-        this.isConnected = false;
-        if (this.onClose) this.onClose();
-    }
-    
-    // Simulate receiving a message
-    simulateReceive(message) {
-        if (this.onMessage) {
-            this.onMessage({ data: JSON.stringify(message) });
-        }
-    }
-}
-
-// Initialize websocket
-let socket = null;
-
-// Initialize game
-document.addEventListener('DOMContentLoaded', initGame);
-
-// In a real implementation, you would set up WebSocket communication
-// between players to transmit moves and game state
+        // Initialize the game when the page loads
+        document.addEventListener('DOMContentLoaded', initGame);
+    </script>
+</body>
+</html>

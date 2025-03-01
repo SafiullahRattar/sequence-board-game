@@ -1,0 +1,146 @@
+const express = require('express');
+const http = require('http');
+const WebSocket = require('ws');
+const path = require('path');
+
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+// Store active games
+const games = new Map();
+
+// Serve static files from current directory
+app.use(express.static(__dirname));
+
+// Add route for root path
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// WebSocket connection handling
+wss.on('connection', (ws) => {
+    console.log('New client connected');
+    let gameId = '';
+    let playerId = '';
+
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            console.log('Received message:', data);
+            
+            switch(data.type) {
+                case 'create':
+                    // Generate a unique game ID
+                    gameId = Math.random().toString(36).substring(2, 8).toUpperCase();
+                    playerId = 'host';
+                    
+                    games.set(gameId, {
+                        host: ws,
+                        hostState: data.gameState,
+                        gameState: data.gameState
+                    });
+                    
+                    console.log(`Game created: ${gameId}`);
+                    
+                    ws.send(JSON.stringify({
+                        type: 'created',
+                        gameId: gameId,
+                        gameState: data.gameState
+                    }));
+                    break;
+
+                case 'join':
+                    gameId = data.gameId;
+                    playerId = 'guest';
+                    const game = games.get(gameId);
+                    
+                    if (game) {
+                        game.guest = ws;
+                        game.guestState = { ...game.gameState };
+                        
+                        // Update player names and hands in both states
+                        if (data.playerName) {
+                            game.gameState.players[1].name = data.playerName;
+                            game.guestState.players[1].name = data.playerName;
+                        }
+                        
+                        console.log(`Player joined game: ${gameId}`);
+                        
+                        // Send game state to joining player
+                        ws.send(JSON.stringify({
+                            type: 'gameState',
+                            gameState: game.guestState
+                        }));
+                        
+                        // Notify host
+                        game.host.send(JSON.stringify({
+                            type: 'playerJoined',
+                            gameState: game.gameState
+                        }));
+                    } else {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            message: 'Game not found'
+                        }));
+                    }
+                    break;
+
+                case 'move':
+                    const currentGame = games.get(gameId || data.gameId);
+                    if (currentGame) {
+                        // Update game state
+                        currentGame.gameState = data.gameState;
+                        
+                        // Send move to other player
+                        const otherPlayer = playerId === 'host' ? currentGame.guest : currentGame.host;
+                        if (otherPlayer && otherPlayer.readyState === WebSocket.OPEN) {
+                            console.log(`Sending move to ${playerId === 'host' ? 'guest' : 'host'}`);
+                            otherPlayer.send(JSON.stringify({
+                                type: 'move',
+                                gameState: data.gameState
+                            }));
+                        } else {
+                            console.log(`Other player not available or disconnected`);
+                        }
+                    } else {
+                        console.log(`Game not found: ${gameId || data.gameId}`);
+                    }
+                    break;
+            }
+        } catch (error) {
+            console.error('Error processing message:', error);
+        }
+    });
+
+    ws.on('close', () => {
+        console.log('Client disconnected');
+        
+        if (gameId && games.has(gameId)) {
+            const game = games.get(gameId);
+            // Notify other player about disconnection
+            const otherPlayer = playerId === 'host' ? game.guest : game.host;
+            
+            if (otherPlayer && otherPlayer.readyState === WebSocket.OPEN) {
+                console.log(`Notifying ${playerId === 'host' ? 'guest' : 'host'} about disconnection`);
+                otherPlayer.send(JSON.stringify({
+                    type: 'playerDisconnected'
+                }));
+            }
+            
+            // Remove game if host disconnects or both players are gone
+            if (playerId === 'host' || 
+                (game.host && game.host.readyState !== WebSocket.OPEN && 
+                 game.guest && game.guest.readyState !== WebSocket.OPEN)) {
+                console.log(`Removing game: ${gameId}`);
+                games.delete(gameId);
+            }
+        }
+    });
+});
+
+// Start server
+const port = process.env.PORT || 3000;
+server.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+});
