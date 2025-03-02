@@ -8,6 +8,16 @@ document.addEventListener('DOMContentLoaded', initGame);
 
 // Initialize the game
 function initGame() {
+  // Check if joining a game via URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const gameCode = urlParams.get('game');
+  if (gameCode) {
+    // This is player 2 joining
+    const usernameInput = document.getElementById('username');
+    if (usernameInput && usernameInput.value === 'Player 1') {
+      usernameInput.value = 'Player 2';
+    }
+  }
   // Initialize global game state
   initGameState();
 

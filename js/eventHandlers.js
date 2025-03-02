@@ -64,7 +64,14 @@ function handleCreateGame() {
 
   // Initialize game
   gameState.board = initializeBoard();
-  gameState.deck = createAndShuffleDeck();
+  
+  if (playerName === 'dev') {
+    console.log('Dev mode activated');
+    // Create a specific deck for testing
+    gameState.deck = ['10♠', 'Q♠', 'K♠', 'A♠'];
+  } else {
+    gameState.deck = createAndShuffleDeck();
+  }
   gameState.players[0].name = playerName;
   gameState.players[1].name = 'Player 2'; // Placeholder until guest joins
   gameState.sequencesToWin = sequencesToWin;
@@ -101,8 +108,14 @@ function handleCreateGame() {
 function handleJoinGame() {
   const joinCode = document.getElementById('joinCode').value;
   
-  // Set default name as Player 2 if no name is provided
-  if (!username.value.trim()) {
+  // Always set name to Player 2 unless explicitly changed by user
+  const defaultName = 'Player 2';
+  if (!username.value.trim() || username.value.trim() === 'Player 1') {
+    username.value = defaultName;
+  }
+  
+  // Always set name to Player 2 if joining, unless explicitly changed
+  if (username.value.trim() === 'Player 1' || !username.value.trim()) {
     username.value = 'Player 2';
   }
 

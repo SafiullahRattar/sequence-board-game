@@ -17,9 +17,9 @@ export function handleCardPlay(card, row, col) {
   const cellValue = gameState.board[row][col];
   if (!cellValue) return false;
   
-  // Check if this move would create an invalid sequence using a corner
-  if (wouldCreateInvalidSequence(row, col, playerIndex)) {
-    showNotification("Can't reuse corner in another sequence");
+  // Check if the space is part of an existing sequence
+  if (cellValue.inSequence) {
+    showNotification("Can't play on a space that's part of a sequence");
     return false;
   }
   
@@ -59,21 +59,8 @@ export function handleCardPlay(card, row, col) {
     return true;
   }
 
-  // Check if this move would form a sequence using an already-used corner
-  const adjacentCorners = getAdjacentCorners(row, col);
-  const usedCorner = adjacentCorners.some(corner => 
-    gameState.sequences.some(seq => 
-      seq.positions.some(pos => pos.row === corner.row && pos.col === corner.col)
-    )
-  );
-
-  if (usedCorner) {
-    showNotification("Can't reuse corner in another sequence");
-    return false;
-  }
-
-  // Check if the space itself is part of a sequence
-  if (cellValue.inSequence || gameState.sequences.some(seq => 
+  // Check if the space itself is part of a sequence (double-check)
+  if (gameState.sequences.some(seq => 
     seq.positions.some(pos => pos.row === row && pos.col === col)
   )) {
     showNotification("Can't play on a space that's part of a sequence");
@@ -146,8 +133,10 @@ function isCornerUsedInSequence(row, col) {
 
 // Check for sequences after placing a token
 export function checkForSequences(row, col) {
-  const playerIndex = gameState.isHost ? 0 : 1;
+  const playerIndex = gameState.currentPlayer;  // Use currentPlayer instead of host status
   const playerColor = gameState.players[playerIndex].color;
+  
+  console.log('Checking sequences for player:', playerIndex, 'with color:', playerColor);
   const directions = [
     [0, 1],  // Horizontal
     [1, 0],  // Vertical
@@ -191,10 +180,13 @@ export function checkForSequences(row, col) {
           );
 
           if (isNewSequence) {
-            // Check if sequence contains a corner that's already used
+            // Check if sequence contains a corner that's already used in another sequence
             const hasUsedCorner = sequence.some(pos => {
               const cell = gameState.board[pos.row][pos.col];
-              return cell.type === 'free' && cell.inSequence;
+              return cell.type === 'free' && cell.inSequence && 
+                     gameState.sequences.some(seq => 
+                       seq.positions.some(p => p.row === pos.row && p.col === pos.col && seq.player !== playerIndex)
+                     );
             });
 
             if (!hasUsedCorner) {
@@ -204,6 +196,10 @@ export function checkForSequences(row, col) {
                 positions: [...sequence]
               });
               gameState.players[playerIndex].sequences++;
+              
+              console.log('New sequence created for player:', playerIndex);
+              console.log('Current sequences:', gameState.sequences);
+              console.log('Player sequence counts:', gameState.players.map(p => p.sequences));
 
               // Immediately mark all cells in the sequence
               for (const pos of sequence) {
@@ -233,6 +229,11 @@ export function checkForSequences(row, col) {
 
 // Helper function to check if a move would create an invalid sequence
 function wouldCreateInvalidSequence(row, col, playerIndex) {
+  // Only check for corners
+  if (gameState.board[row][col].type !== 'free') {
+    return false;
+  }
+
   // Check all directions for potential sequences
   const directions = [
     [0, 1],  // Horizontal

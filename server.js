@@ -52,7 +52,9 @@ wss.on('connection', (ws) => {
           // Generate a unique game ID
           gameId = Math.random().toString(36).substring(2, 8).toUpperCase();
           playerId = 'host';
-
+          
+          console.log('Creating game with player name:', data.playerName);
+          
           // Create a fresh deck and initialize the board
           const deck = [];
           // Add regular cards (2 of each)
@@ -71,9 +73,20 @@ wss.on('connection', (ws) => {
 
           // Deal initial hand to host
           const hostHand = [];
-          for (let i = 0; i < 7; i++) {
-            if (deck.length > 0) {
-              hostHand.push(deck.pop());
+          const isDev = data.playerName === 'dev';
+          
+          if (isDev) {
+            // Give specific cards for testing
+            hostHand.push('10♠', 'Q♠', 'K♠', 'A♠');
+            console.log('Dev mode activated for host');
+            // Clear deck since we're in dev mode
+            deck.length = 0;
+          } else {
+            // Normal dealing
+            for (let i = 0; i < 7; i++) {
+              if (deck.length > 0) {
+                hostHand.push(deck.pop());
+              }
             }
           }
 
@@ -130,7 +143,7 @@ wss.on('connection', (ws) => {
           ws.send(JSON.stringify({
             type: 'created',
             gameId: gameId,
-            gameState: data.gameState
+            gameState: initialGameState
           }));
           break;
 
@@ -199,11 +212,19 @@ wss.on('connection', (ws) => {
               return;
             }
 
-            // Deal cards to the guest player (7 cards)
+            // Deal cards to the guest player
             const guestHand = [];
-            for (let i = 0; i < 7; i++) {
-                if (game.gameState.deck.length > 0) {
-                    guestHand.push(game.gameState.deck.pop());
+            
+            // If host was in dev mode, give guest one one-eyed jack
+            if (game.gameState.players[0].name === 'dev') {
+                guestHand.push('J♠'); // One-eyed jack
+                console.log('Dev mode: Gave guest one-eyed jack');
+            } else {
+                // Normal dealing
+                for (let i = 0; i < 7; i++) {
+                    if (game.gameState.deck.length > 0) {
+                        guestHand.push(game.gameState.deck.pop());
+                    }
                 }
             }
 
