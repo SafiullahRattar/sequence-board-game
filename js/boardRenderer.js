@@ -108,6 +108,26 @@ export function updateGameBoard() {
   }
 }
 
+// Helper function to ensure sequence counts are accurate
+function validateSequenceCounts() {
+  // Count sequences for each player based on the actual sequences array
+  if (gameState.sequences && Array.isArray(gameState.sequences)) {
+    const player0Sequences = gameState.sequences.filter(seq => seq.player === 0).length;
+    const player1Sequences = gameState.sequences.filter(seq => seq.player === 1).length;
+    
+    // Update the counts if they don't match
+    if (gameState.players[0].sequences !== player0Sequences) {
+      console.log(`Fixing player 0 sequence count from ${gameState.players[0].sequences} to ${player0Sequences}`);
+      gameState.players[0].sequences = player0Sequences;
+    }
+    
+    if (gameState.players[1].sequences !== player1Sequences) {
+      console.log(`Fixing player 1 sequence count from ${gameState.players[1].sequences} to ${player1Sequences}`);
+      gameState.players[1].sequences = player1Sequences;
+    }
+  }
+}
+
 // Update player info UI
 export function updatePlayerInfo() {
   const playerIndex = gameState.isHost ? 0 : 1;
@@ -124,6 +144,9 @@ export function updatePlayerInfo() {
     if (!player.name) gameState.players[index].name = `Player ${index + 1}`;
     if (!player.sequences) gameState.players[index].sequences = 0;
   });
+  
+  // Make sure sequence counts are accurate
+  validateSequenceCounts();
 
   // Set player names
   player1Element.textContent = gameState.isHost ?

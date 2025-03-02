@@ -117,16 +117,33 @@ export function handleCardPlay(card, row, col) {
 
 // Helper function to check win condition
 function checkWinCondition(playerIndex) {
-  if (gameState.players[playerIndex].sequences >= gameState.sequencesToWin) {
+  // Make sure sequence count isn't greater than what we actually have
+  const actualSequenceCount = gameState.sequences.filter(seq => seq.player === playerIndex).length;
+  
+  // Update the player's sequence count to match reality
+  gameState.players[playerIndex].sequences = actualSequenceCount;
+  
+  console.log(`Player ${playerIndex} has ${actualSequenceCount} sequences`);
+  
+  // Check if the player has reached the win condition
+  if (actualSequenceCount >= gameState.sequencesToWin) {
     gameState.winner = playerIndex;
-    showNotification(`Player ${playerIndex + 1} wins!`);
+    showNotification(`Player ${playerIndex + 1} wins with ${actualSequenceCount} sequences!`);
   }
 }
 
 // Helper function to check if a corner is already used in a sequence
-function isCornerUsedInSequence(row, col) {
-  // First check if this position is included in any existing sequence
+function isCornerUsedInSequence(row, col, playerIndex) {
+  const cell = gameState.board[row][col];
+  
+  // If it's not a free corner, it can't be "used" in the special corner-sharing sense
+  if (!cell || cell.type !== 'free') {
+    return false;
+  }
+  
+  // Check if this corner is already part of a sequence by another player
   return gameState.sequences.some(sequence => 
+    sequence.player !== playerIndex && 
     sequence.positions.some(pos => pos.row === row && pos.col === col)
   );
 }
@@ -137,6 +154,8 @@ export function checkForSequences(row, col) {
   const playerColor = gameState.players[playerIndex].color;
   
   console.log('Checking sequences for player:', playerIndex, 'with color:', playerColor);
+  
+  // Define possible sequence directions (each sequence must follow a single direction)
   const directions = [
     [0, 1],  // Horizontal
     [1, 0],  // Vertical
@@ -144,87 +163,135 @@ export function checkForSequences(row, col) {
     [1, -1]  // Diagonal down-left
   ];
 
-  // Check all directions
+  // Check each direction separately to ensure sequences maintain consistent direction
   for (const [dx, dy] of directions) {
-    let sequence = [];
-    let consecutiveCount = 0;
-
-    // Look in both directions
+    // For each possible direction, we'll collect cells in that line
+    let directionLine = [];
+    
+    // Look in both the positive and negative directions to find all connected pieces
     for (let i = -4; i <= 4; i++) {
-      const r = row + i * dx;
-      const c = col + i * dy;
-
+      const r = row + (i * dx);
+      const c = col + (i * dy);
+      
+      // Skip out of bounds positions
       if (r < 0 || r >= 10 || c < 0 || c >= 10) {
-        consecutiveCount = 0;
-        sequence = [];
         continue;
       }
-
+      
       const cell = gameState.board[r][c];
-      if (!cell) {
-        consecutiveCount = 0;
-        sequence = [];
-        continue;
+      if (!cell) continue;
+      
+      // Add the position to our direction line if it has player's token or is a free corner
+      if (cell.token === playerColor || cell.type === 'free') {
+        directionLine.push({
+          row: r,
+          col: c,
+          isFreeCorner: cell.type === 'free'
+        });
+      } else {
+        // Break the line at any opponent token or empty space
+        break;
       }
+    }
+    
+    // Now sort the line to ensure consecutive positions
+    directionLine.sort((a, b) => {
+      if (dx === 0) {
+        // Horizontal line sort by column
+        return a.col - b.col;
+      } else if (dy === 0) {
+        // Vertical line sort by row
+        return a.row - b.row;
+      } else if (dx === 1 && dy === 1) {
+        // Diagonal down-right, sort by row (or column, they increase together)
+        return a.row - b.row;
+      } else {
+        // Diagonal down-left, sort by row (as row increases, column decreases)
+        return a.row - b.row;
+      }
+    });
+    
+    // Find consecutive segments of 5 or more
+    for (let startIdx = 0; startIdx <= directionLine.length - 5; startIdx++) {
+      // Check if these 5 positions are consecutive
+      let isConsecutive = true;
+      let segmentPositions = [];
+      let freeCornerCount = 0;
+      
+      for (let j = 0; j < 5; j++) {
+        const current = directionLine[startIdx + j];
+        segmentPositions.push({ row: current.row, col: current.col });
+        
+        if (current.isFreeCorner) {
+          freeCornerCount++;
+        }
+        
+        // If we're not at the first position, check if position is consecutive
+        if (j > 0) {
+          const prev = directionLine[startIdx + j - 1];
+          const isConsecutivePosition = 
+            (dx === 0 && current.col === prev.col + 1 && current.row === prev.row) || // Horizontal
+            (dy === 0 && current.row === prev.row + 1 && current.col === prev.col) || // Vertical
+            (dx === 1 && dy === 1 && current.row === prev.row + 1 && current.col === prev.col + 1) || // Diagonal down-right
+            (dx === 1 && dy === -1 && current.row === prev.row + 1 && current.col === prev.col - 1);  // Diagonal down-left
+          
+          if (!isConsecutivePosition) {
+            isConsecutive = false;
+            break;
+          }
+        }
+      }
+      
+      // Only consider the segment if it has 5 consecutive positions
+      if (isConsecutive) {
+        // Check if this sequence is already counted
+        const isNewSequence = !gameState.sequences.some(seq =>
+          arraysEqual(seq.positions.map(p => `${p.row},${p.col}`),
+            segmentPositions.map(p => `${p.row},${p.col}`))
+        );
 
-      if (cell.type === 'free' || cell.token === playerColor) {
-        sequence.push({ row: r, col: c });
-        consecutiveCount++;
+        if (isNewSequence) {
+          // Check if sequence contains a corner that's already used in another sequence by a different player
+          const hasUsedCornerFromOtherPlayer = segmentPositions.some(pos => {
+            const cell = gameState.board[pos.row][pos.col];
+            return cell.type === 'free' && cell.inSequence && 
+                   gameState.sequences.some(seq => 
+                     seq.player !== playerIndex &&
+                     seq.positions.some(p => p.row === pos.row && p.col === pos.col)
+                   );
+          });
 
-        // Check if we have 5 in a row
-        if (consecutiveCount === 5) {
-          // Check if this sequence is already counted
-          const isNewSequence = !gameState.sequences.some(seq =>
-            arraysEqual(seq.positions.map(p => `${p.row},${p.col}`),
-              sequence.map(p => `${p.row},${p.col}`))
-          );
-
-          if (isNewSequence) {
-            // Check if sequence contains a corner that's already used in another sequence
-            const hasUsedCorner = sequence.some(pos => {
-              const cell = gameState.board[pos.row][pos.col];
-              return cell.type === 'free' && cell.inSequence && 
-                     gameState.sequences.some(seq => 
-                       seq.positions.some(p => p.row === pos.row && p.col === pos.col && seq.player !== playerIndex)
-                     );
+          if (!hasUsedCornerFromOtherPlayer) {
+            // This is a valid new sequence - add it
+            gameState.sequences.push({
+              player: playerIndex,
+              positions: [...segmentPositions],
+              direction: dx === 0 ? 'horizontal' : dy === 0 ? 'vertical' : (dx * dy) > 0 ? 'diagonal-right' : 'diagonal-left'
             });
+            gameState.players[playerIndex].sequences++;
+            
+            console.log('New sequence created for player:', playerIndex);
+            console.log('Current sequences:', gameState.sequences);
+            console.log('Player sequence counts:', gameState.players.map(p => p.sequences));
 
-            if (!hasUsedCorner) {
-              // Add the new sequence
-              gameState.sequences.push({
-                player: playerIndex,
-                positions: [...sequence]
-              });
-              gameState.players[playerIndex].sequences++;
-              
-              console.log('New sequence created for player:', playerIndex);
-              console.log('Current sequences:', gameState.sequences);
-              console.log('Player sequence counts:', gameState.players.map(p => p.sequences));
-
-              // Immediately mark all cells in the sequence
-              for (const pos of sequence) {
-                const cell = gameState.board[pos.row][pos.col];
-                if (cell) {
-                  cell.inSequence = true;
-                  if (cell.type === 'free') {
-                    // Mark the corner as used and owned
-                    cell.token = playerColor;
-                    cell.usedInSequence = true;  // Additional flag for corners
-                  }
+            // Immediately mark all cells in the sequence
+            for (const pos of segmentPositions) {
+              const cell = gameState.board[pos.row][pos.col];
+              if (cell) {
+                cell.inSequence = true;
+                if (cell.type === 'free') {
+                  // Mark the corner as used and owned
+                  cell.token = playerColor;
+                  cell.usedInSequence = true;  // Additional flag for corners
                 }
               }
             }
           }
-
-          // Reset sequence tracking
-          consecutiveCount--;
-          sequence = sequence.slice(1);
         }
-      } else {
-        sequence = [];
       }
     }
   }
+}
 }
 
 // Helper function to check if a move would create an invalid sequence
