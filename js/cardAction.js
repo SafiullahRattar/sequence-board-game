@@ -336,6 +336,10 @@ export function handleCellClick(event) {
     gameState.currentPlayer = 1 - gameState.currentPlayer;
     gameState.selectedCard = null;
     
+    // Clear all highlights
+    const cells = document.querySelectorAll('.cell');
+    cells.forEach(cell => cell.classList.remove('highlight-available'));
+
     // Update the UI
     updateGameBoard();
     updatePlayerHand();
