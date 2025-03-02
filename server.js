@@ -98,21 +98,7 @@ wss.on('connection', (ws) => {
             console.log('Dealt normal hand to host:', hostHand);
           }
 
-          if (isDev) {
-            console.log('DEV MODE ACTIVATED');
-            // Set exact cards for testing
-            hostHand = ['10♠', 'Q♠', 'K♠', 'A♠', '2♥', '3♥', '4♥'];
-            deck = ['J♠', '2♣', '3♣', '4♣', '5♣', '6♣', '7♣'];
-            console.log('Dev mode host hand:', hostHand);
-            console.log('Dev mode deck for player 2:', deck);
-          } else {
-            // Normal dealing
-            for (let i = 0; i < 7; i++) {
-              if (deck.length > 0) {
-                hostHand.push(deck.pop());
-              }
-            }
-          }
+          // This block is redundant and can be removed since we already handled dev mode above
 
           // Initialize board
           const board = [];
@@ -196,6 +182,10 @@ wss.on('connection', (ws) => {
           if (game) {
             console.log('Game found, adding guest player');
             game.guest = ws;
+            
+            // Check for dev mode early
+            const isDevMode = game.gameState.players[0].name === 'dev';
+            console.log('Dev mode check:', isDevMode);
 
             // Ensure game state exists
             if (!game.gameState) {
@@ -219,12 +209,8 @@ wss.on('connection', (ws) => {
             console.log('Original game state:', game.gameState);
             const guestState = JSON.parse(JSON.stringify(game.gameState));
             
-            // Preserve dev mode hands if needed
-            if (DEV_MODE.enabled && game.gameState.players[0].name === 'dev') {
-                console.log('Preserving dev mode hands');
-                game.gameState.players[0].hand = [...DEV_MODE.hostHand];
-                guestState.players[0].hand = [...DEV_MODE.hostHand];
-            }
+            // Set isHost to false for the guest
+            guestState.isHost = false;
 
             // Set isHost to false for the guest
             guestState.isHost = false;
@@ -259,26 +245,24 @@ wss.on('connection', (ws) => {
               return;
             }
 
-            // Deal cards to the guest player (exactly 7 cards)
-            const guestHand = [];
-
-            // Check if this is a dev mode game
-            if (game.gameState.isDev) {
-              console.log('Dev mode: Dealing to guest');
-              console.log('Dev mode detected for guest');
-              guestHand.push('J♠');  // One-eyed jack
-              guestHand.push('2♣', '3♣', '4♣', '5♣', '6♣', '7♣');  // Fill rest with fixed cards
-              // Clear the deck to prevent additional dealing
-              game.gameState.deck = [];
-              console.log('Dev mode guest hand:', guestHand);
+            // Set up guest hand
+            let guestHand;
+            
+            // Use the isDevMode flag we set earlier
+            if (isDevMode) {
+                console.log('Dev mode: Setting up guest hand');
+                guestHand = [...DEV_MODE.guestHand];
+                game.gameState.deck = [];  // Clear deck in dev mode
+                console.log('Dev mode guest hand:', guestHand);
             } else {
-              // Normal dealing
-              for (let i = 0; i < 7; i++) {
-                if (game.gameState.deck.length > 0) {
-                  guestHand.push(game.gameState.deck.pop());
+                // Normal dealing
+                guestHand = [];
+                for (let i = 0; i < 7; i++) {
+                    if (game.gameState.deck.length > 0) {
+                        guestHand.push(game.gameState.deck.pop());
+                    }
                 }
-              }
-              console.log('Normal mode guest hand:', guestHand);
+                console.log('Normal mode guest hand:', guestHand);
             }
 
             // Ensure hand size is exactly 7 cards
@@ -311,9 +295,17 @@ wss.on('connection', (ws) => {
 
             // Send complete game state to joining player
             if (ws.readyState === WebSocket.OPEN) {
+              if (isDevMode) {
+                console.log('Sending dev mode state to guest');
+                // Ensure dev mode hands are set
+                guestState.isDev = true;
+                guestState.players[1].hand = [...DEV_MODE.guestHand];
+                guestState.players[0].hand = [...DEV_MODE.hostHand];
+                console.log('Guest hand before send:', guestState.players[1].hand);
+              }
               const response = {
                 type: 'gameState',
-                gameState: guestState || {}
+                gameState: guestState
               };
               console.log('Sending to guest:', response);
               ws.send(JSON.stringify(response));
