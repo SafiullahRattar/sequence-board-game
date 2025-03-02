@@ -292,7 +292,6 @@ export function checkForSequences(row, col) {
     }
   }
 }
-}
 
 // Helper function to check if a move would create an invalid sequence
 function wouldCreateInvalidSequence(row, col, playerIndex) {
