@@ -1,5 +1,6 @@
 import { gameState, SPECIAL_JACKS, boardLayout } from './gameState.js';
 import { updateGameBoard, updatePlayerHand, updatePlayerInfo } from './boardRenderer.js';
+// Note: Be careful of circular dependencies between boardRenderer.js and cardAction.js
 import { sendGameUpdate } from './webSocketHandler.js';
 import { showNotification } from './uiController.js';
 
@@ -305,6 +306,43 @@ function getAdjacentCorners(row, col) {
   }
 
   return corners;
+}
+
+// Handle cell click events
+export function handleCellClick(event) {
+  const cell = event.target.closest('.cell');
+  if (!cell) return;
+
+  const row = parseInt(cell.dataset.row);
+  const col = parseInt(cell.dataset.col);
+  const playerIndex = gameState.isHost ? 0 : 1;
+  
+  // If no card is selected or it's not player's turn, do nothing
+  if (gameState.selectedCard === null || gameState.currentPlayer !== playerIndex) return;
+
+  const card = gameState.players[playerIndex].hand[gameState.selectedCard];
+  
+  if (handleCardPlay(card, row, col)) {
+    // Remove the played card from hand
+    gameState.players[playerIndex].hand.splice(gameState.selectedCard, 1);
+    
+    // Draw a new card if there are cards in the deck
+    if (gameState.deck.length > 0) {
+      gameState.players[playerIndex].hand.push(gameState.deck.pop());
+    }
+    
+    // Switch turns
+    gameState.currentPlayer = 1 - gameState.currentPlayer;
+    gameState.selectedCard = null;
+    
+    // Update the UI
+    updateGameBoard();
+    updatePlayerHand();
+    updatePlayerInfo();
+    
+    // Send the updated game state
+    sendGameUpdate(gameState);
+  }
 }
 
 // Helper function to compare arrays

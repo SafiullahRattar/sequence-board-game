@@ -1,5 +1,6 @@
 import { gameState, boardLayout } from './gameState.js';
 import { showNotification } from './uiController.js';
+import { highlightAvailableMovesImpl } from './cardAction.js';
 
 // DOM Element references
 const gameBoard = document.getElementById('gameBoard');
@@ -111,6 +112,19 @@ export function updateGameBoard() {
 export function updatePlayerInfo() {
   const playerIndex = gameState.isHost ? 0 : 1;
 
+  // Ensure players array exists and has required properties
+  if (!gameState.players || !Array.isArray(gameState.players) || gameState.players.length < 2) {
+    console.error('Invalid players array in gameState');
+    return;
+  }
+
+  // Initialize players if needed
+  gameState.players.forEach((player, index) => {
+    if (!player) gameState.players[index] = {};
+    if (!player.name) gameState.players[index].name = `Player ${index + 1}`;
+    if (!player.sequences) gameState.players[index].sequences = 0;
+  });
+
   // Set player names
   player1Element.textContent = gameState.isHost ?
     `${gameState.players[0].name} (You)` :
@@ -175,6 +189,8 @@ export function updatePlayerHand() {
     return;
   }
 
+  console.log(`Updating hand for player ${playerIndex}:`, gameState.players[playerIndex].hand);
+
   gameState.players[playerIndex].hand.forEach((card, index) => {
     const cardElement = document.createElement('div');
     cardElement.className = 'card';
@@ -210,7 +226,7 @@ export function updatePlayerHand() {
         gameState.selectedCard = index;
         updatePlayerHand();
         updatePlayerInfo();
-        highlightAvailableMoves(index); // Highlight available moves
+        highlightAvailableMovesImpl(index); // Directly call the implementation
       } else {
         showNotification("It's not your turn");
       }
@@ -222,9 +238,7 @@ export function updatePlayerHand() {
 
 // Highlight available moves for the selected card
 export function highlightAvailableMoves(selectedCard) {
-  import('./cardActions.js').then(module => {
-    module.highlightAvailableMovesImpl(selectedCard);
-  });
+  highlightAvailableMovesImpl(selectedCard);
 }
 
 // Check for winner

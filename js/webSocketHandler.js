@@ -1,4 +1,4 @@
-import { updateGameFromServer } from './gameState.js';
+import { gameState, updateGameFromServer } from './gameState.js';
 import { updateGameBoard, updatePlayerHand, updatePlayerInfo, checkForWinner } from './boardRenderer.js';
 import { showNotification } from './uiController.js';
 
@@ -64,9 +64,30 @@ class GameWebSocketHandler {
       const message = JSON.parse(data);
       console.log('Received message:', message);
 
+      // Get common UI elements
+      const setupScreen = document.getElementById('setupScreen');
+      const gameScreen = document.getElementById('gameScreen');
+      const linkBox = document.getElementById('linkBox');
+      const gameLink = document.getElementById('gameLink');
+      const gameCode = document.getElementById('gameCode');
+
       switch (message.type) {
         case 'gameState':
-          updateGameFromServer(message.data || message.gameState);
+          console.log('Received game state:', message.data || message.gameState);
+          const newState = message.data || message.gameState;
+          
+          if (!newState.players || !newState.players[0] || !newState.players[1]) {
+            console.error('Invalid game state received:', newState);
+            return;
+          }
+          
+          console.log('Player hands:', newState.players[0].hand, newState.players[1].hand);
+          updateGameFromServer(newState);
+          
+          // Hide setup screen and show game screen
+          if (setupScreen) setupScreen.style.display = 'none';
+          if (gameScreen) gameScreen.style.display = 'block';
+          
           updateGameBoard();
           updatePlayerHand();
           updatePlayerInfo();
@@ -85,16 +106,53 @@ class GameWebSocketHandler {
             return;
           }
 
-          updateGameFromServer({
-            ...(message.data || message.gameState || {}),
-            gameId: this.gameId
-          });
+          // Update the game ID
+          gameState.gameId = this.gameId;
+          
+          // Update UI elements
+          
+          // Make sure game screen is hidden
+          if (gameScreen) {
+            gameScreen.style.display = 'none';
+          }
+
+          if (linkBox) {
+            linkBox.style.display = 'block';
+          }
+          
+          if (gameLink) {
+            gameLink.value = `${window.location.origin}?game=${this.gameId}`;
+          }
+          
+          if (gameCode) {
+            gameCode.textContent = this.gameId;
+          }
+          
+          // Hide create button and show waiting state
+          const createGameButton = document.getElementById('createGame');
+          if (createGameButton) {
+            createGameButton.style.display = 'none';
+          }
+
+          const joinForm = document.getElementById('joinForm');
+          if (joinForm) {
+            joinForm.style.display = 'block';
+          }
+          
           updatePlayerInfo();
           break;
 
         case 'playerJoined':
           showNotification(`${message.data?.playerName || 'A player'} has joined the game!`);
           if (message.gameState) {
+            // Hide setup screen and link box
+            if (setupScreen) setupScreen.style.display = 'none';
+            if (linkBox) linkBox.style.display = 'none';
+
+            // Show game screen
+            if (gameScreen) gameScreen.style.display = 'block';
+
+            // Update game state and UI
             updateGameFromServer(message.gameState);
             updateGameBoard();
             updatePlayerHand();

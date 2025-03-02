@@ -1,6 +1,6 @@
 import { gameState, updateGameFromServer, initializeBoard, createAndShuffleDeck, dealCards } from './gameState.js';
 import { updateGameBoard, updatePlayerHand, updatePlayerInfo } from './boardRenderer.js';
-import { handleCellClick, handleCardPlay } from './cardActions.js';
+import { handleCellClick, handleCardPlay } from './cardAction.js';
 import { sendGameUpdate, setupWebSocket, sendGameAction } from './webSocketHandler.js';
 import { showNotification } from './uiController.js';
 
@@ -76,16 +76,21 @@ function handleCreateGame() {
 
   // Set up WebSocket connection
   setupWebSocket().then(() => {
-    // Send initial game state
-    sendGameUpdate(gameState);
-
-    // Show join option
-    joinForm.style.display = 'block';
+    // Hide create game button and show loading state
+    createGameButton.disabled = true;
+    
+    // Send create game request
+    sendGameAction('create', {
+      gameState: gameState
+    });
 
     // Update UI
     updateGameBoard();
     updatePlayerHand();
     updatePlayerInfo();
+
+    // Show game screen
+    document.getElementById('gameScreen').style.display = 'block';
   }).catch(err => {
     console.error('Error setting up WebSocket:', err);
     showNotification('Error creating game. Please try again.');
@@ -95,10 +100,10 @@ function handleCreateGame() {
 // Handle joining an existing game
 function handleJoinGame() {
   const joinCode = document.getElementById('joinCode').value;
-
+  
+  // Set default name as Player 2 if no name is provided
   if (!username.value.trim()) {
-    showNotification('Please enter a username');
-    return;
+    username.value = 'Player 2';
   }
 
   if (!joinCode.trim()) {
@@ -108,17 +113,26 @@ function handleJoinGame() {
 
   const playerName = username.value.trim();
 
+  console.log('Joining game with code:', joinCode.trim());
+  console.log('Player name:', playerName);
+
   // Initialize client as a guest
   gameState.isHost = false;
   gameState.gameId = joinCode.trim();
+  gameState.players[1].name = playerName;  // Set player 2's name
 
   // Set up WebSocket connection
   setupWebSocket().then(() => {
+    console.log('WebSocket connected, sending join request');
     // Send join request
     sendGameAction('join', {
       gameId: joinCode.trim(),
       playerName: playerName
     });
+
+    // Hide join form
+    document.getElementById('joinForm').style.display = 'none';
+    showNotification('Joining game...');
   }).catch(err => {
     console.error('Error setting up WebSocket:', err);
     showNotification('Error joining game. Please try again.');

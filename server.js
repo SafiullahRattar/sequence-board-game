@@ -43,8 +43,9 @@ wss.on('connection', (ws) => {
 
   ws.on('message', (message) => {
     try {
+      console.log('Raw message received:', message.toString());
       const data = JSON.parse(message);
-      console.log('Received message:', data);
+      console.log('Parsed message:', data);
 
       switch (data.type) {
         case 'create':
@@ -52,10 +53,76 @@ wss.on('connection', (ws) => {
           gameId = Math.random().toString(36).substring(2, 8).toUpperCase();
           playerId = 'host';
 
+          // Create a fresh deck and initialize the board
+          const deck = [];
+          // Add regular cards (2 of each)
+          for (let i = 0; i < 2; i++) {
+            for (const suit of ['♥', '♦', '♠', '♣']) {
+              for (const value of ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']) {
+                deck.push(value + suit);
+              }
+            }
+          }
+          // Shuffle deck
+          for (let i = deck.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [deck[i], deck[j]] = [deck[j], deck[i]];
+          }
+
+          // Deal initial hand to host
+          const hostHand = [];
+          for (let i = 0; i < 7; i++) {
+            if (deck.length > 0) {
+              hostHand.push(deck.pop());
+            }
+          }
+
+          // Initialize board
+          const board = [];
+          const boardLayout = [
+            ['F', '10♠', 'Q♠', 'K♠', 'A♠', '2♦', '3♦', '4♦', '5♦', 'F'],
+            ['9♠', '10♥', '9♥', '8♥', '7♥', '6♥', '5♥', '4♥', '3♥', '6♦'],
+            ['8♠', 'Q♥', '7♦', '8♦', '9♦', '10♦', 'Q♦', 'K♦', '2♥', '7♦'],
+            ['7♠', 'K♥', '6♦', '2♣', 'A♥', 'K♥', 'Q♥', 'A♦', '2♠', '8♦'],
+            ['6♠', 'A♥', '5♦', '3♣', '4♥', '3♥', '10♥', 'A♣', '3♠', '9♦'],
+            ['5♠', '2♣', '4♦', '4♣', '5♥', '2♥', '9♥', 'K♣', '4♠', '10♦'],
+            ['4♠', '3♣', '3♦', '5♣', '6♥', '7♥', '8♥', 'Q♣', '5♠', 'Q♦'],
+            ['3♠', '4♣', '2♦', '6♣', '7♣', '8♣', '9♣', '10♣', '6♠', 'K♦'],
+            ['2♠', '5♣', 'A♠', 'K♠', 'Q♠', '10♠', '9♠', '8♠', '7♠', 'A♦'],
+            ['F', '6♣', '7♣', '8♣', '9♣', '10♣', 'Q♣', 'K♣', 'A♣', 'F']
+          ];
+
+          for (let row = 0; row < 10; row++) {
+            board[row] = [];
+            for (let col = 0; col < 10; col++) {
+              const cardCode = boardLayout[row][col];
+              if (cardCode === 'F') {
+                board[row][col] = { type: 'free', token: null };
+              } else {
+                board[row][col] = { type: 'card', code: cardCode, token: null };
+              }
+            }
+          }
+
+          const initialGameState = {
+            board: board,
+            deck: deck,
+            players: [
+              { name: data.playerName || 'Player 1', hand: hostHand, color: 'blue', sequences: 0 },
+              { name: '', hand: [], color: 'green', sequences: 0 }
+            ],
+            currentPlayer: 0,
+            sequencesToWin: 2,
+            selectedCard: null,
+            sequences: [],
+            gameId: gameId,
+            isHost: true
+          };
+
           games.set(gameId, {
             host: ws,
-            hostState: data.gameState,
-            gameState: data.gameState
+            hostState: initialGameState,
+            gameState: initialGameState
           });
 
           console.log(`Game created: ${gameId}`);
@@ -70,13 +137,34 @@ wss.on('connection', (ws) => {
         case 'join':
           gameId = data.gameId;
           playerId = 'guest';
+          console.log('Join request received for game:', gameId);
           const game = games.get(gameId);
 
           if (game) {
+            console.log('Game found, adding guest player');
             game.guest = ws;
 
+            // Ensure game state exists
+            if (!game.gameState) {
+              game.gameState = {
+                board: [],
+                deck: [],
+                players: [
+                  { name: 'Player 1', hand: [], color: 'blue', sequences: 0 },
+                  { name: data.playerName || 'Player 2', hand: [], color: 'green', sequences: 0 }
+                ],
+                currentPlayer: 0,
+                sequencesToWin: 2,
+                selectedCard: null,
+                sequences: [],
+                gameId: gameId,
+                isHost: true
+              };
+            }
+
             // Create a proper game state for the guest
-            const guestState = JSON.parse(JSON.stringify(game.gameState)); // Deep clone
+            console.log('Original game state:', game.gameState);
+            const guestState = JSON.parse(JSON.stringify(game.gameState));
 
             // Set isHost to false for the guest
             guestState.isHost = false;
@@ -84,6 +172,33 @@ wss.on('connection', (ws) => {
             // Make sure the gameId is set
             guestState.gameId = gameId;
             
+            // Ensure game state has required properties
+            if (!guestState.players) {
+                guestState.players = [{}, {}];
+            }
+            if (!guestState.players[1]) {
+                guestState.players[1] = {};
+            }
+            if (!game.gameState.players) {
+                game.gameState.players = [{}, {}];
+            }
+            if (!game.gameState.players[1]) {
+                game.gameState.players[1] = {};
+            }
+            if (!game.gameState.deck) {
+                game.gameState.deck = [];
+            }
+
+            // Ensure game state has a deck
+            if (!game.gameState.deck) {
+              console.error('No deck found in game state');
+              ws.send(JSON.stringify({
+                type: 'error',
+                message: 'Game initialization error'
+              }));
+              return;
+            }
+
             // Deal cards to the guest player (7 cards)
             const guestHand = [];
             for (let i = 0; i < 7; i++) {
@@ -91,31 +206,40 @@ wss.on('connection', (ws) => {
                     guestHand.push(game.gameState.deck.pop());
                 }
             }
+
+            // Update both states with the guest's hand
             guestState.players[1].hand = guestHand;
             game.gameState.players[1].hand = guestHand;
 
-            // Update player names if provided
-            if (data.playerName) {
-              guestState.players[1].name = data.playerName;
-              game.gameState.players[1].name = data.playerName;
-            }
+            console.log('Dealt hand to guest:', guestHand);
+
+            // Set default name for player 2 or use provided name
+            const playerName = data.playerName || 'Player 2';
+            guestState.players[1].name = playerName;
+            game.gameState.players[1].name = playerName;
 
             // Store guest state
             game.guestState = guestState;
 
-            console.log(`Player joined game: ${gameId}`);
+            console.log(`Player joined game: ${gameId} as ${playerName}`);
 
             // Send complete game state to joining player
-            ws.send(JSON.stringify({
-              type: 'gameState',
-              gameState: guestState
-            }));
+            if (ws.readyState === WebSocket.OPEN) {
+              const response = {
+                type: 'gameState',
+                gameState: guestState || {}
+              };
+              console.log('Sending to guest:', response);
+              ws.send(JSON.stringify(response));
+            }
 
             // Notify host with updated game state
-            game.host.send(JSON.stringify({
-              type: 'playerJoined',
-              gameState: game.gameState
-            }));
+            if (game.host && game.host.readyState === WebSocket.OPEN) {
+              game.host.send(JSON.stringify({
+                type: 'playerJoined',
+                gameState: game.gameState
+              }));
+            }
           } else {
             ws.send(JSON.stringify({
               type: 'error',
@@ -148,6 +272,17 @@ wss.on('connection', (ws) => {
       }
     } catch (error) {
       console.error('Error processing message:', error);
+      // Try to send error back to client
+      try {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Server error occurred. Please try again.'
+          }));
+        }
+      } catch (e) {
+        console.error('Error sending error message to client:', e);
+      }
     }
   });
 
