@@ -75,19 +75,18 @@ class GameWebSocketHandler {
         case 'gameState':
           console.log('Received game state:', message.data || message.gameState);
           const newState = message.data || message.gameState;
-          
+
           if (!newState.players || !newState.players[0] || !newState.players[1]) {
             console.error('Invalid game state received:', newState);
             return;
           }
-          
-          console.log('Player hands:', newState.players[0].hand, newState.players[1].hand);
+
           updateGameFromServer(newState);
-          
+
           // Hide setup screen and show game screen
           if (setupScreen) setupScreen.style.display = 'none';
           if (gameScreen) gameScreen.style.display = 'block';
-          
+
           updateGameBoard();
           updatePlayerHand();
           updatePlayerInfo();
@@ -108,9 +107,9 @@ class GameWebSocketHandler {
 
           // Update the game ID
           gameState.gameId = this.gameId;
-          
+
           // Update UI elements
-          
+
           // Make sure game screen is hidden
           if (gameScreen) {
             gameScreen.style.display = 'none';
@@ -119,15 +118,15 @@ class GameWebSocketHandler {
           if (linkBox) {
             linkBox.style.display = 'block';
           }
-          
+
           if (gameLink) {
             gameLink.value = `${window.location.origin}?game=${this.gameId}`;
           }
-          
+
           if (gameCode) {
             gameCode.textContent = this.gameId;
           }
-          
+
           // Hide create button and show waiting state
           const createGameButton = document.getElementById('createGame');
           if (createGameButton) {
@@ -138,7 +137,7 @@ class GameWebSocketHandler {
           if (joinForm) {
             joinForm.style.display = 'block';
           }
-          
+
           updatePlayerInfo();
           break;
 
