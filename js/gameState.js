@@ -39,6 +39,7 @@ export let gameState = {
 
 // Initialize the game state
 export function initGameState() {
+  const isDev = window.location.search.includes('dev=true');
   gameState = {
     board: [],
     deck: [],
@@ -105,12 +106,21 @@ export function dealCards(handSize = 7) {
   }
 }
 
+// Dev mode configuration
+const DEV_MODE = {
+  hostHand: ['10♠', 'Q♠', 'K♠', 'A♠', '2♥', '3♥', '4♥'],
+  guestHand: ['J♠', '2♣', '3♣', '4♣', '5♣', '6♣', '7♣']
+};
+
 // Set game state from server update
 export function updateGameFromServer(newGameState) {
   console.log("Updating game from server state:", newGameState);
 
   // Preserve the client's perspective (host or guest)
   const wasHost = gameState.isHost !== undefined ? gameState.isHost : true;
+  
+  // Check if we're in dev mode
+  const isDevMode = gameState.players[0].name === 'dev';
 
   // Make a deep copy of the new state
   const updatedState = JSON.parse(JSON.stringify(newGameState));
@@ -143,6 +153,20 @@ export function updateGameFromServer(newGameState) {
     }
   }
 
+  // Preserve dev mode hands if needed
+  if (isDevMode) {
+    console.log('Preserving dev mode hands during state update');
+    if (wasHost) {
+      updatedState.players[0].hand = [...DEV_MODE.hostHand];
+    } else {
+      updatedState.players[1].hand = [...DEV_MODE.guestHand];
+    }
+  }
+
   // Update the game state
   gameState = updatedState;
+
+  // Log the final hand state
+  const playerIndex = wasHost ? 0 : 1;
+  console.log(`Final hand for player ${playerIndex}:`, gameState.players[playerIndex].hand);
 }
